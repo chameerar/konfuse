@@ -1,0 +1,9 @@
+# Byte-compiled
+__pycache__/
+*.py[cod]
+
+# Backups
+*.backup.*
+
+# OS
+.DS_Store

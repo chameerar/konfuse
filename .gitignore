@@ -1,9 +1,31 @@
-# Byte-compiled
+# Python
 __pycache__/
 *.py[cod]
+*.egg-info/
+dist/
+build/
 
-# Backups
+# Testing & coverage
+.coverage
+.coverage.*
+htmlcov/
+.pytest_cache/
+
+# Linting
+.ruff_cache/
+
+# PyInstaller
+*.spec
+
+# Claude Code
+.claude/
+
+# Backups (kubeconfig)
 *.backup.*
+
+# Internal planning docs
+ADOPTION_PLAN.md
 
 # OS
 .DS_Store
+Thumbs.db

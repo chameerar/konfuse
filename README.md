@@ -23,12 +23,33 @@ Got a new cluster config from your ops team? Spinning up another EKS environment
 
 ## Installation
 
-```bash
-# Recommended
-pipx install konfuse
+### Standalone binary (no Python required)
 
-# Or with pip
-pip install konfuse
+Download and run — nothing else needed.
+
+```bash
+# macOS (Apple Silicon)
+curl -L https://github.com/chameerar/konfuse/releases/latest/download/konfuse-macos-arm64 \
+  -o /usr/local/bin/konfuse && chmod +x /usr/local/bin/konfuse
+
+# macOS (Intel)
+curl -L https://github.com/chameerar/konfuse/releases/latest/download/konfuse-macos-amd64 \
+  -o /usr/local/bin/konfuse && chmod +x /usr/local/bin/konfuse
+
+# Linux (amd64)
+curl -L https://github.com/chameerar/konfuse/releases/latest/download/konfuse-linux-amd64 \
+  -o /usr/local/bin/konfuse && chmod +x /usr/local/bin/konfuse
+
+# Linux (arm64)
+curl -L https://github.com/chameerar/konfuse/releases/latest/download/konfuse-linux-arm64 \
+  -o /usr/local/bin/konfuse && chmod +x /usr/local/bin/konfuse
+```
+
+### Python (if you already have Python 3.8+)
+
+```bash
+pipx install konfuse   # recommended
+pip install konfuse    # or with pip
 ```
 
 ## Usage

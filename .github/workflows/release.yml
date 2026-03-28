@@ -36,7 +36,7 @@ jobs:
       - name: Build binary
         run: |
           GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} \
-            go build -ldflags="-s -w" \
+            go build -ldflags="-s -w -X main.version=${GITHUB_REF_NAME}" \
             -o dist/konfuse-${{ matrix.target }} .
 
       - name: Upload binary artifact

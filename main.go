@@ -13,6 +13,9 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// version is set at build time via -ldflags "-X main.version=vX.Y.Z".
+var version = "dev"
+
 // Output structs preserve key order in JSON (Go maps sort alphabetically).
 
 type dryRunOutput struct {
@@ -110,13 +113,14 @@ func main() {
 	home, _ := os.UserHomeDir()
 	defaultKubeconfig := filepath.Join(home, ".kube", "config")
 
+	showVersion := flag.Bool("version", false, "Print version and exit")
 	renameContext := flag.String("rename-context", "", "Rename the first incoming context")
 	renameCluster := flag.String("rename-cluster", "", "Rename the first incoming cluster")
 	renameUser := flag.String("rename-user", "", "Rename the first incoming user")
 	kubeconfig := flag.String("kubeconfig", defaultKubeconfig, "Target kubeconfig to merge into (default: ~/.kube/config)")
 	dryRun := flag.Bool("dry-run", false, "Preview what would be merged without writing any changes")
-	jsonOutput := flag.Bool("json", false, "Output results as JSON (default when stdout is not a TTY)")
-	_ = flag.Bool("yes", false, "Skip all confirmation prompts (non-interactive mode)")
+	jsonOutput := flag.Bool("json", false, "Output results as JSON (auto-enabled when stdout is not a TTY)")
+	_ = flag.Bool("yes", false, "Skip confirmation prompts (also auto-skipped in non-TTY / piped contexts)")
 
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: konfuse <input.yaml> [flags]\n\n")
@@ -134,6 +138,11 @@ func main() {
 	input, flagArgs := extractPositional(os.Args[1:])
 	flag.CommandLine.Parse(flagArgs) //nolint:errcheck
 
+	if *showVersion {
+		fmt.Printf("konfuse %s\n", version)
+		os.Exit(exitOK)
+	}
+
 	if input == "" {
 		fmt.Fprintln(os.Stderr, "Error: input file argument is required")
 		flag.Usage()
@@ -142,11 +151,19 @@ func main() {
 
 	useJSON := *jsonOutput || !isTTY()
 
-	// Validate input file exists.
-	if _, err := os.Stat(input); os.IsNotExist(err) {
+	// Validate input file exists and is non-empty.
+	fi, statErr := os.Stat(input)
+	if os.IsNotExist(statErr) {
 		fail(useJSON,
 			fmt.Sprintf("Input file not found: %s", input),
 			"konfuse <path-to-kubeconfig.yaml>",
+			exitNotFound,
+		)
+	}
+	if statErr == nil && fi.Size() == 0 {
+		fail(useJSON,
+			fmt.Sprintf("Input file is empty: %s", input),
+			"Ensure the file is a valid kubeconfig YAML",
 			exitNotFound,
 		)
 	}

@@ -9,6 +9,20 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.1.1] - 2026-03-28
+
+### Added
+- `--version` flag — prints the version and exits (`konfuse v0.1.1`)
+- Version embedded at build time via `-ldflags "-X main.version=..."` for release binaries
+
+### Fixed
+- Empty input file now returns a clear `"Input file is empty"` error with exit code 3 (was a cryptic `"Failed to parse YAML: EOF"` with exit code 1)
+
+### Documented
+- `--json` and `--yes` flag help text now explicitly states that non-TTY contexts (pipes, CI) automatically skip prompts and enable JSON output
+
+---
+
 ## [0.1.0] - 2026-03-28
 
 ### Added

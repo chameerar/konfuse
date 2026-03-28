@@ -78,15 +78,24 @@ jobs:
           sha256sum konfuse-* > checksums.txt
           cat checksums.txt
 
+      - name: Extract release notes from CHANGELOG
+        id: changelog
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          NOTES=$(awk "/^## \[$VERSION\]/{found=1; next} found && /^## \[/{exit} found{print}" CHANGELOG.md)
+          echo "notes<<EOF" >> $GITHUB_OUTPUT
+          echo "$NOTES" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          body: ${{ steps.changelog.outputs.notes }}
           files: |
             dist/konfuse-linux-amd64
             dist/konfuse-linux-arm64
             dist/konfuse-macos-arm64
             dist/checksums.txt
-          generate_release_notes: true
 
   # ── Publish to PyPI ────────────────────────────────────────────────────────
   publish-pypi:

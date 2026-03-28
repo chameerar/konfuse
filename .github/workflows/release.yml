@@ -9,47 +9,35 @@ jobs:
   # ── Build standalone binaries ──────────────────────────────────────────────
   build-binaries:
     name: Build binary (${{ matrix.target }})
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
     strategy:
       matrix:
         include:
-          - os: ubuntu-latest
-            target: linux-amd64
-          - os: ubuntu-latest
-            target: linux-arm64
-          - os: macos-latest
-            target: macos-arm64
+          - target: linux-amd64
+            goos: linux
+            goarch: amd64
+          - target: linux-arm64
+            goos: linux
+            goarch: arm64
+          - target: macos-amd64
+            goos: darwin
+            goarch: amd64
+          - target: macos-arm64
+            goos: darwin
+            goarch: arm64
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-go@v5
         with:
-          python-version: "3.12"
+          go-version: "1.22"
 
-      - name: Install dependencies
-        run: pip install pyinstaller PyYAML
-
-      - name: Build binary (Linux arm64)
-        if: matrix.target == 'linux-arm64'
-        uses: uraimo/run-on-arch-action@v2
-        with:
-          arch: aarch64
-          distro: ubuntu22.04
-          install: |
-            apt-get update -q
-            apt-get install -y python3 python3-pip
-            pip3 install pyinstaller PyYAML
-          run: |
-            pyinstaller --onefile --name konfuse konfuse.py
-            mv dist/konfuse dist/konfuse-linux-arm64
-
-      - name: Build binary (non-arm64)
-        if: matrix.target != 'linux-arm64'
+      - name: Build binary
         run: |
-          pyinstaller --onefile --name konfuse konfuse.py
-          mv dist/konfuse dist/konfuse-${{ matrix.target }}
+          GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} \
+            go build -ldflags="-s -w" \
+            -o dist/konfuse-${{ matrix.target }} .
 
       - name: Upload binary artifact
         uses: actions/upload-artifact@v4
@@ -96,29 +84,6 @@ jobs:
           files: |
             dist/konfuse-linux-amd64
             dist/konfuse-linux-arm64
+            dist/konfuse-macos-amd64
             dist/konfuse-macos-arm64
             dist/checksums.txt
-
-  # ── Publish to PyPI ────────────────────────────────────────────────────────
-  publish-pypi:
-    name: Publish to PyPI
-    needs: build-binaries
-    runs-on: ubuntu-latest
-    permissions:
-      id-token: write
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Build
-        run: |
-          pip install build
-          python -m build
-
-      - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1

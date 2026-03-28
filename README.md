@@ -3,9 +3,7 @@
 > Merge any kubeconfig in one command. Rename on import. Never lose your existing config.
 
 [![CI](https://github.com/chameerar/konfuse/actions/workflows/ci.yml/badge.svg)](https://github.com/chameerar/konfuse/actions/workflows/ci.yml)
-[![PyPI version](https://img.shields.io/pypi/v/konfuse)](https://pypi.org/project/konfuse/)
-[![Python versions](https://img.shields.io/pypi/pyversions/konfuse)](https://pypi.org/project/konfuse/)
-[![codecov](https://codecov.io/gh/chameerar/konfuse/branch/main/graph/badge.svg)](https://codecov.io/gh/chameerar/konfuse)
+[![Release](https://img.shields.io/github/v/release/chameerar/konfuse)](https://github.com/chameerar/konfuse/releases/latest)
 
 Kubeconfigs are confusing enough. `konfuse` makes merging them less so.
 
@@ -18,20 +16,26 @@ Got a new cluster config from your ops team? Spinning up another EKS environment
 | Merge kubeconfigs | ✓ | ✓ | ✗ | ✓ |
 | Rename context on import | ✓ | ✗ | ✗ | ✗ |
 | Rename cluster on import | ✓ | ✗ | ✗ | ✗ |
+| Rename user on import | ✓ | ✗ | ✗ | ✗ |
 | Auto timestamped backup | ✓ | ✗ | ✗ | ✗ |
+| --dry-run / preview | ✓ | ✗ | ✗ | ✗ |
+| --json structured output | ✓ | ✗ | ✗ | ✗ |
+| Single binary, no runtime deps | ✓ | ✓ | ✓ | ✗ |
 | kubectl plugin (Krew) | soon | ✓ | ✓ | ✓ |
 
 ## Installation
 
-### Standalone binary 
-
-Download and run — nothing else needed.
+### Download binary (recommended)
 
 ```bash
 mkdir -p ~/.local/bin
 
 # macOS (Apple Silicon)
 curl -L https://github.com/chameerar/konfuse/releases/latest/download/konfuse-macos-arm64 \
+  -o ~/.local/bin/konfuse && chmod +x ~/.local/bin/konfuse
+
+# macOS (Intel)
+curl -L https://github.com/chameerar/konfuse/releases/latest/download/konfuse-macos-amd64 \
   -o ~/.local/bin/konfuse && chmod +x ~/.local/bin/konfuse
 
 # Linux (amd64)
@@ -43,17 +47,16 @@ curl -L https://github.com/chameerar/konfuse/releases/latest/download/konfuse-li
   -o ~/.local/bin/konfuse && chmod +x ~/.local/bin/konfuse
 ```
 
-Then make sure `~/.local/bin` is on your PATH (add to `~/.zshrc` or `~/.bashrc` if needed):
+Make sure `~/.local/bin` is on your PATH (add to `~/.zshrc` or `~/.bashrc` if needed):
 
 ```bash
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
-### Python (if you already have Python 3.8+)
+### Build from source
 
 ```bash
-pipx install konfuse   # recommended
-pip install konfuse    # or with pip
+go install github.com/chameerar/konfuse@latest
 ```
 
 ## Usage
@@ -116,7 +119,7 @@ CURRENT   NAME       CLUSTER       AUTHINFO
 1. Validates the input file is a valid kubeconfig (`kind: Config`)
 2. Backs up your existing config to `~/.kube/config.backup.<YYYYMMDDTHHMMSS>`
 3. Merges clusters, users, and contexts — renaming the first entry if flags are set
-4. Updates internal cluster references when `--rename-cluster` is used
+4. Updates internal cluster/user references when `--rename-*` flags are used
 5. Saves the merged result
 
 Conflicts (same name already exists) are handled non-fatally: the incoming entry replaces the existing one with a warning.
@@ -124,13 +127,8 @@ Conflicts (same name already exists) are handled non-fatally: the incoming entry
 ## Restore a backup
 
 ```bash
-cp ~/.kube/config.backup.20260327T103000 ~/.kube/config
+cp ~/.kube/config.backup.20260328T120000 ~/.kube/config
 ```
-
-## Requirements
-
-- Python 3.8+
-- PyYAML (installed automatically)
 
 ## License
 

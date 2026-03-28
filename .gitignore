@@ -1,21 +1,9 @@
-# Python
-__pycache__/
-*.py[cod]
-*.egg-info/
+# Build output
 dist/
-build/
+konfuse
 
-# Testing & coverage
-.coverage
-.coverage.*
-htmlcov/
-.pytest_cache/
-
-# Linting
-.ruff_cache/
-
-# PyInstaller
-*.spec
+# Go
+*.test
 
 # Claude Code
 .claude/

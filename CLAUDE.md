@@ -4,46 +4,61 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-`konfuse` is a single-file Python CLI tool that merges Kubernetes kubeconfig files. Unique combination: merge + rename-on-import + timestamped auto-backup.
+`konfuse` is a Go CLI tool that merges Kubernetes kubeconfig files with rename-on-import and auto-backup. Single binary, no runtime dependencies.
 
 ## Development Setup
 
 ```bash
-pip install -e ".[dev]"
+go mod tidy
 ```
 
 ## Commands
 
 ```bash
+# Build
+go build -o konfuse .
+
 # Run tests
-pytest
+go test ./...
 
-# Run a single test
-pytest tests/test_merge.py::TestRenameCluster
+# Run a specific test
+go test ./internal/merger/ -run TestRenameUser
 
-# Run with coverage
-pytest --cov=konfuse --cov-report=term-missing
+# Run tests with verbose output
+go test -v ./...
 
-# Lint
-ruff check .
+# Vet
+go vet ./...
 
 # Run the tool
-konfuse new-cluster.yaml --rename-context prod --rename-cluster eks-prod
+go run . new-cluster.yaml --rename-context prod --rename-cluster eks-prod
 ```
 
 ## Architecture
 
-All logic lives in `konfuse.py` (~200 lines). Execution flow:
+```
+main.go                   # CLI entry point (flag parsing, I/O, output formatting)
+internal/merger/
+  merger.go               # Pure merge logic — no I/O, all testable
+  merger_test.go          # Go tests
+```
 
-1. **CLI** (`main()` via argparse) — validates input, reads arguments
-2. **Load** (`load_yaml`) — parses both the incoming and existing kubeconfig YAML
-3. **Backup** (`backup_config`) — creates a timestamped `.bak` copy before any writes
-4. **Merge** (`merge_kubeconfig`) — merges clusters, users, and contexts; warns on name conflicts; applies optional renames only to the **first** cluster/context in the incoming file, updating internal cross-references
-5. **Save** (`save_yaml`) — writes the merged result
+**`main.go`** handles all I/O: loading/saving YAML, creating backups, formatting human/JSON output, exit codes.
 
-`merge_kubeconfig` is pure (dict-in, dict-out, no I/O) — all tests call it directly without mocking.
+**`internal/merger`** is pure logic (no I/O):
+- `MergeKubeconfig(existing, incoming, renameContext, renameCluster, renameUser)` — merges two configs, renames first entries only, updates cross-references, returns `(*KubeConfig, MergeResult)`
+- `BackupConfig(path)` — creates a timestamped `.backup.<timestamp>` copy
+- `KubeConfig` / `NamedEntry` — YAML-tagged structs; `NamedEntry.Body` uses `yaml:",inline"` to preserve unknown fields
+
+## Key behaviours
+
+- Only the **first** cluster/context/user in the incoming file is renamed; others pass through unchanged
+- When `--rename-cluster` is set, the cluster reference inside the first context is also updated
+- When `--rename-user` is set, the user reference inside the first context is also updated
+- `--json` is auto-enabled when stdout is not a TTY (pipes, CI)
+- Exit codes: 0 ok, 1 error, 2 usage error, 3 file not found
 
 ## CI
 
-- `.github/workflows/ci.yml` — runs lint + tests on Python 3.8/3.10/3.12 × ubuntu/macos on every push and PR
-- `.github/workflows/release.yml` — on `v*` tags: builds standalone binaries via PyInstaller (linux-amd64, linux-arm64, macos-amd64, macos-arm64), uploads them as GitHub Release assets with SHA256 checksums, then publishes to PyPI
+- `.github/workflows/ci.yml` — `go vet` + `go test ./...` on every push/PR
+- `.github/workflows/release.yml` — cross-compiled binaries for linux/macos × amd64/arm64 via `GOOS`/`GOARCH`, uploaded to GitHub Releases with SHA256 checksums, then publishes to PyPI via OIDC

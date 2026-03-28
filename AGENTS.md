@@ -4,55 +4,60 @@ This file provides guidance to AI coding agents (OpenAI Codex, etc.) when workin
 
 ## Overview
 
-`konfuse` is a single-file Python CLI tool (`konfuse.py`) that merges Kubernetes kubeconfig files with rename-on-import and auto-backup.
+`konfuse` is a Go CLI tool that merges Kubernetes kubeconfig files with rename-on-import and auto-backup. Single binary, no runtime dependencies.
 
 ## Development Setup
 
 ```bash
-pip install -e ".[dev]"
+go mod tidy
 ```
 
 ## Commands
 
 ```bash
+# Build
+go build -o konfuse .
+
 # Run tests
-pytest
+go test ./...
 
-# Run a single test class
-pytest tests/test_merge.py::TestRenameUser
+# Run a specific test
+go test ./internal/merger/ -run TestRenameUser
 
-# Run with coverage
-pytest --cov=konfuse --cov-report=term-missing
-
-# Lint
-ruff check .
+# Vet
+go vet ./...
 
 # Run the tool
-konfuse new-cluster.yaml --rename-context prod --rename-cluster eks-prod
+go run . new-cluster.yaml --rename-context prod --rename-cluster eks-prod
 ```
 
 ## Architecture
 
-All logic is in `konfuse.py`. Execution flow:
+```
+main.go                   # CLI entry point (flag parsing, I/O, output formatting)
+internal/merger/
+  merger.go               # Pure merge logic — no I/O, all testable
+  merger_test.go          # Go tests
+```
 
-1. **CLI** (`main()` via argparse) — validates input, parses flags
-2. **Load** (`load_yaml`) — parses incoming and existing kubeconfig YAML
-3. **Backup** (`backup_config`) — creates a timestamped copy before any writes
-4. **Merge** (`merge_kubeconfig`) — pure function (dict-in, dict-out): merges clusters/users/contexts, applies optional renames to the first entry of each section, updates cross-references, returns `(merged_dict, result_dict)`
-5. **Save** (`save_yaml`) — writes the result; skipped in `--dry-run` mode
+**`internal/merger.MergeKubeconfig`** is a pure function — all tests call it directly without any mocking.
 
 ## Key flags
 
 | Flag | Behaviour |
 |---|---|
 | `--dry-run` | Compute and show changes without writing |
-| `--json` | Output structured JSON (auto-enabled when stdout is not a TTY) |
+| `--json` | Structured JSON output (auto-enabled when stdout is not a TTY) |
 | `--yes` | Skip prompts (non-interactive / CI mode) |
 | `--rename-context` | Rename the first incoming context |
-| `--rename-cluster` | Rename the first incoming cluster |
-| `--rename-user` | Rename the first incoming user |
+| `--rename-cluster` | Rename the first incoming cluster (also updates context's cluster ref) |
+| `--rename-user` | Rename the first incoming user (also updates context's user ref) |
 
-## CI
+## Exit codes
 
-- `.github/workflows/ci.yml` — lint + test matrix on every push/PR
-- `.github/workflows/release.yml` — standalone binaries + PyPI publish on `v*` tags
+| Code | Meaning |
+|---|---|
+| 0 | Success |
+| 1 | General error |
+| 2 | Usage / argument error |
+| 3 | Input file not found |

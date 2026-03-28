@@ -1,5 +1,5 @@
 """
-kube-ctx-merge: Merge a new kubeconfig into your existing kubeconfig.
+konfuse: Merge a new kubeconfig into your existing kubeconfig.
 
 Takes a new kubeconfig YAML file and merges its clusters, users, and contexts
 into the existing kubeconfig. Backs up the existing config before any changes.
@@ -7,12 +7,11 @@ into the existing kubeconfig. Backs up the existing config before any changes.
 
 import argparse
 import os
-import sys
 import shutil
+import sys
 from datetime import datetime
 
 import yaml
-
 
 DEFAULT_KUBECONFIG = os.path.expanduser("~/.kube/config")
 
@@ -93,7 +92,8 @@ def merge_kubeconfig(existing, incoming, rename_context=None, rename_cluster=Non
 
     # Merge clusters
     for cluster in incoming["clusters"]:
-        name = new_cluster_name if cluster["name"] == orig_cluster_name and rename_cluster else cluster["name"]
+        is_first = cluster["name"] == orig_cluster_name and rename_cluster
+        name = new_cluster_name if is_first else cluster["name"]
         entry = {"name": name, "cluster": cluster["cluster"]}
         existing_entry = find_by_name(existing["clusters"], name)
         if existing_entry:
@@ -117,7 +117,8 @@ def merge_kubeconfig(existing, incoming, rename_context=None, rename_cluster=Non
 
     # Merge contexts (apply renames for both context name and cluster reference)
     for ctx in incoming["contexts"]:
-        name = new_context_name if ctx["name"] == orig_context_name and rename_context else ctx["name"]
+        is_first = ctx["name"] == orig_context_name and rename_context
+        name = new_context_name if is_first else ctx["name"]
         context_data = dict(ctx["context"])
         # Update cluster reference if cluster was renamed
         if rename_cluster and context_data.get("cluster") == orig_cluster_name:
@@ -136,12 +137,12 @@ def merge_kubeconfig(existing, incoming, rename_context=None, rename_cluster=Non
 
 def main():
     parser = argparse.ArgumentParser(
-        prog="kube-ctx-merge",
+        prog="konfuse",
         description="Merge a new kubeconfig file into your existing kubeconfig.",
         epilog="Examples:\n"
-               "  kube-ctx-merge new-cluster.yaml\n"
-               "  kube-ctx-merge new-cluster.yaml --rename-context my-prod --rename-cluster prod-cluster\n"
-               "  kube-ctx-merge new-cluster.yaml --kubeconfig /path/to/config\n",
+               "  konfuse new-cluster.yaml\n"
+               "  konfuse new-cluster.yaml --rename-context my-prod --rename-cluster prod-cluster\n"
+               "  konfuse new-cluster.yaml --kubeconfig /path/to/config\n",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
@@ -175,7 +176,8 @@ def main():
     print(f"📂 Loading incoming config: {args.input}")
     incoming = load_yaml(args.input)
     if not incoming or incoming.get("kind") != "Config":
-        print("Error: Input file does not look like a valid kubeconfig (missing kind: Config)", file=sys.stderr)
+        print("Error: Input file does not look like a valid kubeconfig (missing kind: Config)",
+              file=sys.stderr)
         sys.exit(1)
 
     # Load existing config (or start fresh)

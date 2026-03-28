@@ -28,17 +28,25 @@ Got a new cluster config from your ops team? Spinning up another EKS environment
 Download and run — nothing else needed.
 
 ```bash
+mkdir -p ~/.local/bin
+
 # macOS (Apple Silicon)
 curl -L https://github.com/chameerar/konfuse/releases/latest/download/konfuse-macos-arm64 \
-  -o /usr/local/bin/konfuse && chmod +x /usr/local/bin/konfuse
+  -o ~/.local/bin/konfuse && chmod +x ~/.local/bin/konfuse
 
 # Linux (amd64)
 curl -L https://github.com/chameerar/konfuse/releases/latest/download/konfuse-linux-amd64 \
-  -o /usr/local/bin/konfuse && chmod +x /usr/local/bin/konfuse
+  -o ~/.local/bin/konfuse && chmod +x ~/.local/bin/konfuse
 
 # Linux (arm64)
 curl -L https://github.com/chameerar/konfuse/releases/latest/download/konfuse-linux-arm64 \
-  -o /usr/local/bin/konfuse && chmod +x /usr/local/bin/konfuse
+  -o ~/.local/bin/konfuse && chmod +x ~/.local/bin/konfuse
+```
+
+Then make sure `~/.local/bin` is on your PATH (add to `~/.zshrc` or `~/.bashrc` if needed):
+
+```bash
+export PATH="$HOME/.local/bin:$PATH"
 ```
 
 ### Python (if you already have Python 3.8+)

@@ -15,16 +15,10 @@ jobs:
         include:
           - os: ubuntu-latest
             target: linux-amd64
-            arch: x86_64
           - os: ubuntu-latest
             target: linux-arm64
-            arch: aarch64
-          - os: macos-13        # Intel
-            target: macos-amd64
-            arch: x86_64
-          - os: macos-latest    # Apple Silicon
+          - os: macos-latest
             target: macos-arm64
-            arch: arm64
 
     steps:
       - uses: actions/checkout@v4
@@ -90,7 +84,6 @@ jobs:
           files: |
             dist/konfuse-linux-amd64
             dist/konfuse-linux-arm64
-            dist/konfuse-macos-amd64
             dist/konfuse-macos-arm64
             dist/checksums.txt
           generate_release_notes: true

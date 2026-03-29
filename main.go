@@ -220,7 +220,7 @@ func main() {
 			fmt.Println()
 			printChanges(result, true)
 			if hasConflicts {
-				fmt.Println("\n⚠  Conflicts detected. Use --rename-* flags to avoid replacing existing entries.")
+				fmt.Println("\nwarning: conflicts detected. Use --rename-* flags to avoid replacing existing entries.")
 			}
 		}
 		os.Exit(exitOK)
@@ -252,14 +252,14 @@ func main() {
 		})
 	} else {
 		if backupPath != nil {
-			fmt.Printf("💾 Backup saved: %s\n", *backupPath)
+			fmt.Printf("backup: %s\n", *backupPath)
 		}
 		fmt.Println()
 		printChanges(result, false)
 		if hasConflicts {
-			fmt.Println("\n⚠  Some entries were replaced. Use --rename-* flags to keep both versions.")
+			fmt.Println("\nwarning: some entries were replaced. Use --rename-* flags to keep both versions.")
 		}
-		fmt.Printf("\n✅ Merged config saved to: %s\n", *kubeconfig)
+		fmt.Printf("\nsaved: %s\n", *kubeconfig)
 	}
 
 	os.Exit(exitOK)
@@ -313,10 +313,10 @@ func printChanges(result merger.MergeResult, dryRun bool) {
 	}
 	for _, s := range sections {
 		for _, name := range s.result.Added {
-			fmt.Printf("  ✓  %s %s: %s\n", addVerb, s.label, name)
+			fmt.Printf("  + %s %s: %s\n", addVerb, s.label, name)
 		}
 		for _, name := range s.result.Replaced {
-			fmt.Printf("  ⚠  %s %s: %s\n", replaceVerb, s.label, name)
+			fmt.Printf("  ! %s %s: %s\n", replaceVerb, s.label, name)
 		}
 	}
 }

@@ -1,0 +1,19 @@
+linters:
+  enable:
+    - errcheck      # unchecked errors
+    - gosimple      # simplification suggestions
+    - govet         # go vet checks
+    - ineffassign   # unused assignments
+    - staticcheck   # static analysis
+    - unused        # unused code
+
+linters-settings:
+  errcheck:
+    # Allow ignoring errors on Close() calls via defer
+    ignore: ".*Close.*"
+
+issues:
+  exclude-rules:
+    # nolint comments in main.go are intentional (flag.CommandLine.Parse)
+    - text: "should not use dot imports"
+      linters: [golint]

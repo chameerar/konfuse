@@ -10,7 +10,8 @@ linters:
 linters-settings:
   errcheck:
     # Allow ignoring errors on Close() calls via defer
-    ignore: ".*Close.*"
+    exclude-functions:
+      - (*os.File).Close
 
 issues:
   exclude-rules:

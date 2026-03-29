@@ -58,7 +58,7 @@ func emit(data interface{}) {
 	enc := json.NewEncoder(&buf)
 	enc.SetIndent("", "  ")
 	enc.SetEscapeHTML(false)
-	enc.Encode(data)
+	_ = enc.Encode(data)
 	fmt.Print(buf.String())
 }
 
@@ -67,7 +67,7 @@ func fail(useJSON bool, message, hint string, code int) {
 		var buf bytes.Buffer
 		enc := json.NewEncoder(&buf)
 		enc.SetEscapeHTML(false)
-		enc.Encode(errorOutput{Error: message, Hint: hint})
+		_ = enc.Encode(errorOutput{Error: message, Hint: hint})
 		fmt.Fprint(os.Stderr, buf.String())
 	} else {
 		fmt.Fprintf(os.Stderr, "Error: %s\n", message)

@@ -113,6 +113,18 @@ func main() {
 	home, _ := os.UserHomeDir()
 	defaultKubeconfig := filepath.Join(home, ".kube", "config")
 
+	// Check for subcommands before flag parsing.
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "list":
+			runList(os.Args[2:], defaultKubeconfig)
+			return
+		case "delete":
+			runDelete(os.Args[2:], defaultKubeconfig)
+			return
+		}
+	}
+
 	showVersion := flag.Bool("version", false, "Print version and exit")
 	renameContext := flag.String("rename-context", "", "Rename the first incoming context")
 	renameCluster := flag.String("rename-cluster", "", "Rename the first incoming cluster")
@@ -123,8 +135,13 @@ func main() {
 	_ = flag.Bool("yes", false, "Skip confirmation prompts (also auto-skipped in non-TTY / piped contexts)")
 
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Usage: konfuse <input.yaml> [flags]\n\n")
+		fmt.Fprintf(os.Stderr, "Usage: konfuse <input.yaml> [flags]\n")
+		fmt.Fprintf(os.Stderr, "       konfuse list [flags]\n")
+		fmt.Fprintf(os.Stderr, "       konfuse delete <context-name> [flags]\n\n")
 		fmt.Fprintf(os.Stderr, "Merge a new kubeconfig file into your existing kubeconfig.\n\n")
+		fmt.Fprintf(os.Stderr, "Commands:\n")
+		fmt.Fprintf(os.Stderr, "  list     List contexts, clusters, and users in the kubeconfig\n")
+		fmt.Fprintf(os.Stderr, "  delete   Delete a context and its orphaned cluster/user\n\n")
 		fmt.Fprintf(os.Stderr, "Arguments:\n")
 		fmt.Fprintf(os.Stderr, "  input    Path to the kubeconfig YAML file to merge\n\n")
 		fmt.Fprintf(os.Stderr, "Flags:\n")
@@ -134,6 +151,8 @@ func main() {
 		fmt.Fprintf(os.Stderr, "  konfuse new-cluster.yaml --rename-context prod --rename-cluster eks-prod\n")
 		fmt.Fprintf(os.Stderr, "  konfuse new-cluster.yaml --dry-run --json\n")
 		fmt.Fprintf(os.Stderr, "  konfuse new-cluster.yaml --kubeconfig /path/to/config\n")
+		fmt.Fprintf(os.Stderr, "  konfuse list\n")
+		fmt.Fprintf(os.Stderr, "  konfuse delete my-context\n")
 	}
 	input, flagArgs := extractPositional(os.Args[1:])
 	flag.CommandLine.Parse(flagArgs) //nolint:errcheck
@@ -262,6 +281,119 @@ func main() {
 		fmt.Printf("\nsaved: %s\n", *kubeconfig)
 	}
 
+	os.Exit(exitOK)
+}
+
+// ---------------------------------------------------------------------------
+// Subcommands
+// ---------------------------------------------------------------------------
+
+func runList(args []string, defaultKubeconfig string) {
+	fs := flag.NewFlagSet("list", flag.ExitOnError)
+	kubeconfig := fs.String("kubeconfig", defaultKubeconfig, "Path to kubeconfig")
+	jsonOutput := fs.Bool("json", false, "Output as JSON (auto-enabled when stdout is not a TTY)")
+	fs.Parse(args) //nolint:errcheck
+
+	useJSON := *jsonOutput || !isTTY()
+
+	cfg, err := loadYAML(*kubeconfig)
+	if err != nil {
+		fail(useJSON, fmt.Sprintf("Failed to load kubeconfig: %s", err), "", exitError)
+	}
+
+	result := merger.ListEntries(cfg)
+
+	if useJSON {
+		emit(result)
+	} else {
+		if result.CurrentContext != "" {
+			fmt.Printf("current-context: %s\n\n", result.CurrentContext)
+		}
+		fmt.Println("CONTEXTS")
+		if len(result.Contexts) == 0 {
+			fmt.Println("  (none)")
+		}
+		for _, ctx := range result.Contexts {
+			marker := " "
+			if ctx.Name == result.CurrentContext {
+				marker = "*"
+			}
+			fmt.Printf("  %s %-20s cluster=%-20s user=%s\n", marker, ctx.Name, ctx.Cluster, ctx.User)
+		}
+		fmt.Println()
+		fmt.Println("CLUSTERS")
+		if len(result.Clusters) == 0 {
+			fmt.Println("  (none)")
+		}
+		for _, name := range result.Clusters {
+			fmt.Printf("    %s\n", name)
+		}
+		fmt.Println()
+		fmt.Println("USERS")
+		if len(result.Users) == 0 {
+			fmt.Println("  (none)")
+		}
+		for _, name := range result.Users {
+			fmt.Printf("    %s\n", name)
+		}
+	}
+	os.Exit(exitOK)
+}
+
+func runDelete(args []string, defaultKubeconfig string) {
+	fs := flag.NewFlagSet("delete", flag.ExitOnError)
+	kubeconfig := fs.String("kubeconfig", defaultKubeconfig, "Path to kubeconfig")
+	jsonOutput := fs.Bool("json", false, "Output as JSON (auto-enabled when stdout is not a TTY)")
+	fs.Parse(args) //nolint:errcheck
+
+	useJSON := *jsonOutput || !isTTY()
+
+	contextName := fs.Arg(0)
+	if contextName == "" {
+		fail(useJSON, "context name is required", "konfuse delete <context-name>", exitUsage)
+	}
+
+	cfg, err := loadYAML(*kubeconfig)
+	if err != nil {
+		fail(useJSON, fmt.Sprintf("Failed to load kubeconfig: %s", err), "", exitError)
+	}
+
+	// Backup before modifying.
+	bp, err := merger.BackupConfig(*kubeconfig)
+	if err != nil {
+		fail(useJSON, fmt.Sprintf("Failed to create backup: %s", err), "", exitError)
+	}
+
+	cfg, result, err := merger.DeleteContext(cfg, contextName)
+	if err != nil {
+		fail(useJSON, err.Error(), "konfuse list", exitError)
+	}
+
+	if err := saveYAML(*kubeconfig, cfg); err != nil {
+		fail(useJSON, fmt.Sprintf("Failed to write kubeconfig: %s", err), "", exitError)
+	}
+
+	if useJSON {
+		emit(struct {
+			Deleted merger.DeleteResult `json:"deleted"`
+			Backup  string              `json:"backup,omitempty"`
+		}{
+			Deleted: result,
+			Backup:  bp,
+		})
+	} else {
+		if bp != "" {
+			fmt.Printf("backup: %s\n\n", bp)
+		}
+		fmt.Printf("  - Deleted context: %s\n", result.Context)
+		if result.Cluster != "" {
+			fmt.Printf("  - Deleted cluster: %s\n", result.Cluster)
+		}
+		if result.User != "" {
+			fmt.Printf("  - Deleted user: %s\n", result.User)
+		}
+		fmt.Printf("\nsaved: %s\n", *kubeconfig)
+	}
 	os.Exit(exitOK)
 }
 

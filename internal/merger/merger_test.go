@@ -703,3 +703,299 @@ func TestBackupConfig(t *testing.T) {
 		_ = p2
 	})
 }
+
+// ---------------------------------------------------------------------------
+// ListEntries
+// ---------------------------------------------------------------------------
+
+func TestListEntries(t *testing.T) {
+	t.Run("lists_all_entries", func(t *testing.T) {
+		cfg := makeKubeConfig(
+			[]merger.NamedEntry{makeCluster("c1", "https://example.com"), makeCluster("c2", "https://example.com")},
+			[]merger.NamedEntry{makeUser("u1", "tok"), makeUser("u2", "tok")},
+			[]merger.NamedEntry{makeContext("ctx1", "c1", "u1"), makeContext("ctx2", "c2", "u2")},
+		)
+		cfg.CurrentContext = "ctx1"
+
+		result := merger.ListEntries(cfg)
+		if result.CurrentContext != "ctx1" {
+			t.Errorf("CurrentContext = %q, want ctx1", result.CurrentContext)
+		}
+		if len(result.Contexts) != 2 {
+			t.Errorf("context count = %d, want 2", len(result.Contexts))
+		}
+		if result.Contexts[0].Name != "ctx1" || result.Contexts[0].Cluster != "c1" || result.Contexts[0].User != "u1" {
+			t.Errorf("context[0] = %+v, want ctx1/c1/u1", result.Contexts[0])
+		}
+		if len(result.Clusters) != 2 {
+			t.Errorf("cluster count = %d, want 2", len(result.Clusters))
+		}
+		if len(result.Users) != 2 {
+			t.Errorf("user count = %d, want 2", len(result.Users))
+		}
+	})
+
+	t.Run("empty_config", func(t *testing.T) {
+		cfg := makeKubeConfig(nil, nil, nil)
+		result := merger.ListEntries(cfg)
+		if len(result.Contexts) != 0 || len(result.Clusters) != 0 || len(result.Users) != 0 {
+			t.Error("expected empty lists for empty config")
+		}
+	})
+
+	t.Run("no_current_context", func(t *testing.T) {
+		cfg := makeKubeConfig(
+			[]merger.NamedEntry{makeCluster("c1", "https://example.com")},
+			nil,
+			[]merger.NamedEntry{makeContext("ctx1", "c1", "u1")},
+		)
+		result := merger.ListEntries(cfg)
+		if result.CurrentContext != "" {
+			t.Errorf("CurrentContext = %q, want empty", result.CurrentContext)
+		}
+	})
+
+	t.Run("context_with_missing_body", func(t *testing.T) {
+		cfg := makeKubeConfig(nil, nil, []merger.NamedEntry{
+			{Name: "ctx-no-body", Body: map[string]interface{}{}},
+		})
+		result := merger.ListEntries(cfg)
+		if len(result.Contexts) != 1 {
+			t.Fatalf("context count = %d, want 1", len(result.Contexts))
+		}
+		if result.Contexts[0].Name != "ctx-no-body" {
+			t.Errorf("name = %q, want ctx-no-body", result.Contexts[0].Name)
+		}
+		if result.Contexts[0].Cluster != "" || result.Contexts[0].User != "" {
+			t.Error("expected empty cluster/user for context without body")
+		}
+	})
+
+	t.Run("preserves_entry_order", func(t *testing.T) {
+		cfg := makeKubeConfig(
+			[]merger.NamedEntry{makeCluster("z-cluster", "https://z.com"), makeCluster("a-cluster", "https://a.com")},
+			[]merger.NamedEntry{makeUser("z-user", "tok"), makeUser("a-user", "tok")},
+			[]merger.NamedEntry{makeContext("z-ctx", "z-cluster", "z-user"), makeContext("a-ctx", "a-cluster", "a-user")},
+		)
+		result := merger.ListEntries(cfg)
+		if result.Clusters[0] != "z-cluster" || result.Clusters[1] != "a-cluster" {
+			t.Errorf("clusters order = %v, want [z-cluster, a-cluster]", result.Clusters)
+		}
+		if result.Users[0] != "z-user" || result.Users[1] != "a-user" {
+			t.Errorf("users order = %v, want [z-user, a-user]", result.Users)
+		}
+		if result.Contexts[0].Name != "z-ctx" || result.Contexts[1].Name != "a-ctx" {
+			t.Error("contexts order not preserved")
+		}
+	})
+}
+
+// ---------------------------------------------------------------------------
+// DeleteContext
+// ---------------------------------------------------------------------------
+
+func TestDeleteContext(t *testing.T) {
+	t.Run("deletes_context_and_orphaned_cluster_and_user", func(t *testing.T) {
+		cfg := makeKubeConfig(
+			[]merger.NamedEntry{makeCluster("c1", "https://example.com")},
+			[]merger.NamedEntry{makeUser("u1", "tok")},
+			[]merger.NamedEntry{makeContext("ctx1", "c1", "u1")},
+		)
+		got, result, err := merger.DeleteContext(cfg, "ctx1")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if result.Context != "ctx1" {
+			t.Errorf("deleted context = %q, want ctx1", result.Context)
+		}
+		if result.Cluster != "c1" {
+			t.Errorf("deleted cluster = %q, want c1", result.Cluster)
+		}
+		if result.User != "u1" {
+			t.Errorf("deleted user = %q, want u1", result.User)
+		}
+		if len(got.Contexts) != 0 || len(got.Clusters) != 0 || len(got.Users) != 0 {
+			t.Error("expected all entries to be removed")
+		}
+	})
+
+	t.Run("keeps_shared_cluster_and_user", func(t *testing.T) {
+		cfg := makeKubeConfig(
+			[]merger.NamedEntry{makeCluster("shared-c", "https://example.com")},
+			[]merger.NamedEntry{makeUser("shared-u", "tok")},
+			[]merger.NamedEntry{
+				makeContext("ctx1", "shared-c", "shared-u"),
+				makeContext("ctx2", "shared-c", "shared-u"),
+			},
+		)
+		got, result, err := merger.DeleteContext(cfg, "ctx1")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if result.Cluster != "" {
+			t.Errorf("cluster should not be deleted when still referenced, got %q", result.Cluster)
+		}
+		if result.User != "" {
+			t.Errorf("user should not be deleted when still referenced, got %q", result.User)
+		}
+		if len(got.Clusters) != 1 || len(got.Users) != 1 {
+			t.Error("shared cluster/user should be preserved")
+		}
+		if len(got.Contexts) != 1 || got.Contexts[0].Name != "ctx2" {
+			t.Error("ctx2 should remain")
+		}
+	})
+
+	t.Run("error_on_missing_context", func(t *testing.T) {
+		cfg := makeKubeConfig(nil, nil, nil)
+		_, _, err := merger.DeleteContext(cfg, "nonexistent")
+		if err == nil {
+			t.Error("expected error for missing context")
+		}
+	})
+
+	t.Run("clears_current_context_if_deleted", func(t *testing.T) {
+		cfg := makeKubeConfig(
+			[]merger.NamedEntry{makeCluster("c1", "https://example.com")},
+			[]merger.NamedEntry{makeUser("u1", "tok")},
+			[]merger.NamedEntry{makeContext("ctx1", "c1", "u1")},
+		)
+		cfg.CurrentContext = "ctx1"
+		got, _, err := merger.DeleteContext(cfg, "ctx1")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.CurrentContext != "" {
+			t.Errorf("CurrentContext = %q, want empty after deleting active context", got.CurrentContext)
+		}
+	})
+
+	t.Run("preserves_current_context_if_different", func(t *testing.T) {
+		cfg := makeKubeConfig(
+			[]merger.NamedEntry{makeCluster("c1", "https://example.com"), makeCluster("c2", "https://example.com")},
+			[]merger.NamedEntry{makeUser("u1", "tok"), makeUser("u2", "tok")},
+			[]merger.NamedEntry{makeContext("ctx1", "c1", "u1"), makeContext("ctx2", "c2", "u2")},
+		)
+		cfg.CurrentContext = "ctx2"
+		got, _, err := merger.DeleteContext(cfg, "ctx1")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.CurrentContext != "ctx2" {
+			t.Errorf("CurrentContext = %q, want ctx2", got.CurrentContext)
+		}
+	})
+
+	t.Run("shared_cluster_orphaned_user", func(t *testing.T) {
+		cfg := makeKubeConfig(
+			[]merger.NamedEntry{makeCluster("shared-c", "https://example.com")},
+			[]merger.NamedEntry{makeUser("only-u", "tok"), makeUser("shared-u", "tok")},
+			[]merger.NamedEntry{
+				makeContext("ctx1", "shared-c", "only-u"),
+				makeContext("ctx2", "shared-c", "shared-u"),
+			},
+		)
+		got, result, err := merger.DeleteContext(cfg, "ctx1")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if result.Cluster != "" {
+			t.Errorf("shared cluster should not be deleted, got %q", result.Cluster)
+		}
+		if result.User != "only-u" {
+			t.Errorf("orphaned user = %q, want only-u", result.User)
+		}
+		if len(got.Clusters) != 1 {
+			t.Errorf("cluster count = %d, want 1", len(got.Clusters))
+		}
+		if len(got.Users) != 1 || got.Users[0].Name != "shared-u" {
+			t.Error("shared-u should remain, only-u should be removed")
+		}
+	})
+
+	t.Run("context_with_no_body", func(t *testing.T) {
+		cfg := makeKubeConfig(
+			[]merger.NamedEntry{makeCluster("c1", "https://example.com")},
+			[]merger.NamedEntry{makeUser("u1", "tok")},
+			[]merger.NamedEntry{
+				{Name: "bare-ctx", Body: map[string]interface{}{}},
+			},
+		)
+		got, result, err := merger.DeleteContext(cfg, "bare-ctx")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if result.Context != "bare-ctx" {
+			t.Errorf("deleted context = %q, want bare-ctx", result.Context)
+		}
+		// Cluster and user should not be touched since context had no refs.
+		if result.Cluster != "" || result.User != "" {
+			t.Error("no cluster/user should be deleted for context without refs")
+		}
+		if len(got.Clusters) != 1 || len(got.Users) != 1 {
+			t.Error("unrelated cluster/user should be preserved")
+		}
+	})
+
+	t.Run("delete_middle_preserves_order", func(t *testing.T) {
+		cfg := makeKubeConfig(
+			[]merger.NamedEntry{makeCluster("c1", "https://example.com"), makeCluster("c2", "https://example.com"), makeCluster("c3", "https://example.com")},
+			[]merger.NamedEntry{makeUser("u1", "tok"), makeUser("u2", "tok"), makeUser("u3", "tok")},
+			[]merger.NamedEntry{
+				makeContext("ctx1", "c1", "u1"),
+				makeContext("ctx2", "c2", "u2"),
+				makeContext("ctx3", "c3", "u3"),
+			},
+		)
+		got, _, err := merger.DeleteContext(cfg, "ctx2")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(got.Contexts) != 2 {
+			t.Fatalf("context count = %d, want 2", len(got.Contexts))
+		}
+		if got.Contexts[0].Name != "ctx1" || got.Contexts[1].Name != "ctx3" {
+			t.Errorf("remaining contexts = [%s, %s], want [ctx1, ctx3]", got.Contexts[0].Name, got.Contexts[1].Name)
+		}
+		if len(got.Clusters) != 2 || got.Clusters[0].Name != "c1" || got.Clusters[1].Name != "c3" {
+			t.Error("remaining clusters should be [c1, c3] in order")
+		}
+		if len(got.Users) != 2 || got.Users[0].Name != "u1" || got.Users[1].Name != "u3" {
+			t.Error("remaining users should be [u1, u3] in order")
+		}
+	})
+
+	t.Run("ref_points_to_nonexistent_cluster_and_user", func(t *testing.T) {
+		// Context references a cluster/user that don't exist in the entries lists.
+		cfg := makeKubeConfig(
+			nil,
+			nil,
+			[]merger.NamedEntry{makeContext("ctx1", "ghost-c", "ghost-u")},
+		)
+		got, result, err := merger.DeleteContext(cfg, "ctx1")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if result.Context != "ctx1" {
+			t.Errorf("deleted context = %q, want ctx1", result.Context)
+		}
+		// Cluster/user not in the lists, so nothing extra to delete.
+		if result.Cluster != "" || result.User != "" {
+			t.Error("should not report deleted cluster/user when they don't exist in entries")
+		}
+		if len(got.Contexts) != 0 {
+			t.Error("context should be removed")
+		}
+	})
+
+	t.Run("error_message_includes_context_name", func(t *testing.T) {
+		cfg := makeKubeConfig(nil, nil, nil)
+		_, _, err := merger.DeleteContext(cfg, "my-missing-ctx")
+		if err == nil {
+			t.Fatal("expected error")
+		}
+		if !strings.Contains(err.Error(), "my-missing-ctx") {
+			t.Errorf("error = %q, should contain context name", err.Error())
+		}
+	})
+}

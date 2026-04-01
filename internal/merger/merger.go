@@ -215,6 +215,123 @@ func BackupConfig(path string) (string, error) {
 	return backupPath, nil
 }
 
+// ListResult holds the entries found in a kubeconfig.
+type ListResult struct {
+	CurrentContext string       `json:"current_context"`
+	Contexts       []ContextInfo `json:"contexts"`
+	Clusters       []string     `json:"clusters"`
+	Users          []string     `json:"users"`
+}
+
+// ContextInfo describes a single context entry.
+type ContextInfo struct {
+	Name    string `json:"name"`
+	Cluster string `json:"cluster"`
+	User    string `json:"user"`
+}
+
+// ListEntries returns a summary of all entries in the kubeconfig.
+func ListEntries(cfg *KubeConfig) ListResult {
+	result := ListResult{
+		CurrentContext: cfg.CurrentContext,
+		Contexts:       []ContextInfo{},
+		Clusters:       []string{},
+		Users:          []string{},
+	}
+	for _, ctx := range cfg.Contexts {
+		info := ContextInfo{Name: ctx.Name}
+		if ctxData, ok := ctx.Body["context"].(map[string]interface{}); ok {
+			info.Cluster, _ = ctxData["cluster"].(string)
+			info.User, _ = ctxData["user"].(string)
+		}
+		result.Contexts = append(result.Contexts, info)
+	}
+	for _, c := range cfg.Clusters {
+		result.Clusters = append(result.Clusters, c.Name)
+	}
+	for _, u := range cfg.Users {
+		result.Users = append(result.Users, u.Name)
+	}
+	return result
+}
+
+// DeleteResult records what was removed by a delete operation.
+type DeleteResult struct {
+	Context string `json:"context"`
+	Cluster string `json:"cluster,omitempty"`
+	User    string `json:"user,omitempty"`
+}
+
+// DeleteContext removes the named context from the kubeconfig. If the context's
+// cluster or user are not referenced by any other context, they are also removed.
+// Returns the modified config, a summary of what was deleted, and an error if the
+// context was not found.
+func DeleteContext(cfg *KubeConfig, contextName string) (*KubeConfig, DeleteResult, error) {
+	idx := findByName(cfg.Contexts, contextName)
+	if idx < 0 {
+		return cfg, DeleteResult{}, fmt.Errorf("context %q not found", contextName)
+	}
+
+	// Extract cluster/user references from the context being deleted.
+	var clusterRef, userRef string
+	if ctxData, ok := cfg.Contexts[idx].Body["context"].(map[string]interface{}); ok {
+		clusterRef, _ = ctxData["cluster"].(string)
+		userRef, _ = ctxData["user"].(string)
+	}
+
+	// Remove the context.
+	cfg.Contexts = append(cfg.Contexts[:idx], cfg.Contexts[idx+1:]...)
+
+	result := DeleteResult{Context: contextName}
+
+	// If current-context pointed to the deleted context, clear it.
+	if cfg.CurrentContext == contextName {
+		cfg.CurrentContext = ""
+	}
+
+	// Remove orphaned cluster (not referenced by any remaining context).
+	if clusterRef != "" && !isClusterReferenced(cfg.Contexts, clusterRef) {
+		if ci := findByName(cfg.Clusters, clusterRef); ci >= 0 {
+			cfg.Clusters = append(cfg.Clusters[:ci], cfg.Clusters[ci+1:]...)
+			result.Cluster = clusterRef
+		}
+	}
+
+	// Remove orphaned user (not referenced by any remaining context).
+	if userRef != "" && !isUserReferenced(cfg.Contexts, userRef) {
+		if ui := findByName(cfg.Users, userRef); ui >= 0 {
+			cfg.Users = append(cfg.Users[:ui], cfg.Users[ui+1:]...)
+			result.User = userRef
+		}
+	}
+
+	return cfg, result, nil
+}
+
+// isClusterReferenced returns true if any context references the given cluster.
+func isClusterReferenced(contexts []NamedEntry, cluster string) bool {
+	for _, ctx := range contexts {
+		if ctxData, ok := ctx.Body["context"].(map[string]interface{}); ok {
+			if c, _ := ctxData["cluster"].(string); c == cluster {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// isUserReferenced returns true if any context references the given user.
+func isUserReferenced(contexts []NamedEntry, user string) bool {
+	for _, ctx := range contexts {
+		if ctxData, ok := ctx.Body["context"].(map[string]interface{}); ok {
+			if u, _ := ctxData["user"].(string); u == user {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // findByName returns the index of the entry with the given name, or -1.
 func findByName(entries []NamedEntry, name string) int {
 	for i, e := range entries {

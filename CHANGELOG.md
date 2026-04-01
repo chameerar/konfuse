@@ -9,6 +9,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.2.0] - 2026-04-01
+
+### Added
+- `konfuse list` — list all contexts, clusters, and users in the kubeconfig; marks the current context with `*`
+- `konfuse delete <context-name>` — delete a context and automatically remove its orphaned cluster/user entries
+- Both subcommands support `--kubeconfig` and `--json` flags
+- Automatic backup before delete operations
+
+---
+
 ## [0.1.1] - 2026-03-28
 
 ### Added

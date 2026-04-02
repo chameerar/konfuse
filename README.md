@@ -59,6 +59,20 @@ export PATH="$HOME/.local/bin:$PATH"
 go install github.com/chameerar/konfuse@latest
 ```
 
+### Uninstall
+
+If you installed via binary download:
+
+```bash
+rm ~/.local/bin/konfuse
+```
+
+If you installed via `go install`:
+
+```bash
+rm $(go env GOPATH)/bin/konfuse
+```
+
 ## Usage
 
 ```bash

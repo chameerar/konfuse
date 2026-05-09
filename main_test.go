@@ -632,6 +632,26 @@ current-context: ""
 		}
 	})
 
+	t.Run("input_required_error_respects_json_mode", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		code := runMergeE(
+			[]string{"--json"},
+			"",
+			strings.NewReader(""),
+			&stdout, &stderr,
+		)
+		if code != exitUsage {
+			t.Errorf("exit = %d, want %d", code, exitUsage)
+		}
+		var got errorOutput
+		if err := json.Unmarshal(stderr.Bytes(), &got); err != nil {
+			t.Fatalf("expected JSON error in stderr, got non-JSON: %q", stderr.String())
+		}
+		if got.Error == "" {
+			t.Errorf("expected error message, got %+v", got)
+		}
+	})
+
 	t.Run("version_flag_short_circuits", func(t *testing.T) {
 		var stdout, stderr bytes.Buffer
 		code := runMergeE(
@@ -834,7 +854,7 @@ current-context: ctx1
 		}
 	})
 
-	t.Run("returns_error_when_kubeconfig_missing", func(t *testing.T) {
+	t.Run("returns_exitNotFound_when_kubeconfig_missing", func(t *testing.T) {
 		var stdout, stderr bytes.Buffer
 		code := runListE(
 			[]string{"--kubeconfig", "/no/such/path/config", "--json"},
@@ -842,8 +862,49 @@ current-context: ctx1
 			strings.NewReader(""),
 			&stdout, &stderr,
 		)
-		if code != exitError {
-			t.Errorf("exit = %d, want %d", code, exitError)
+		if code != exitNotFound {
+			t.Errorf("exit = %d, want %d", code, exitNotFound)
+		}
+	})
+
+	t.Run("human_output_uses_underscore_current_context", func(t *testing.T) {
+		path := writeTempFile(t, yamlBody)
+		withFakeTTYStdin(t)
+
+		var stdout, stderr bytes.Buffer
+		code := runListE(
+			[]string{"--kubeconfig", path},
+			"",
+			strings.NewReader(""),
+			&stdout, &stderr,
+		)
+		if code != exitOK {
+			t.Fatalf("exit = %d, stderr: %s", code, stderr.String())
+		}
+		if !strings.Contains(stdout.String(), "current_context: ctx1") {
+			t.Errorf("expected 'current_context: ctx1' in human output, got:\n%s", stdout.String())
+		}
+		if strings.Contains(stdout.String(), "current-context:") {
+			t.Errorf("expected hyphenated 'current-context:' to be gone, got:\n%s", stdout.String())
+		}
+	})
+
+	t.Run("help_shows_examples", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		code := runListE(
+			[]string{"-h"},
+			"",
+			strings.NewReader(""),
+			&stdout, &stderr,
+		)
+		if code != exitUsage {
+			t.Errorf("exit = %d, want %d (help)", code, exitUsage)
+		}
+		if !strings.Contains(stderr.String(), "Examples:") {
+			t.Errorf("expected 'Examples:' in help output, got:\n%s", stderr.String())
+		}
+		if !strings.Contains(stderr.String(), "konfuse list") {
+			t.Errorf("expected example 'konfuse list', got:\n%s", stderr.String())
 		}
 	})
 }
@@ -1058,6 +1119,35 @@ current-context: ctx1
 			t.Errorf("prompt should not appear when context missing, got %q", stderr.String())
 		}
 	})
+
+	t.Run("returns_exitNotFound_when_kubeconfig_missing", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		code := runDeleteE(
+			[]string{"any-ctx", "--kubeconfig", "/no/such/path/config", "--json"},
+			"",
+			strings.NewReader(""),
+			&stdout, &stderr,
+		)
+		if code != exitNotFound {
+			t.Errorf("exit = %d, want %d", code, exitNotFound)
+		}
+	})
+
+	t.Run("help_shows_examples", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		code := runDeleteE(
+			[]string{"-h"},
+			"",
+			strings.NewReader(""),
+			&stdout, &stderr,
+		)
+		if code != exitUsage {
+			t.Errorf("exit = %d, want %d", code, exitUsage)
+		}
+		if !strings.Contains(stderr.String(), "Examples:") {
+			t.Errorf("expected 'Examples:' in help, got:\n%s", stderr.String())
+		}
+	})
 }
 
 // ---------------------------------------------------------------------------
@@ -1178,6 +1268,35 @@ current-context: ctx1
 		)
 		if code != exitUsage {
 			t.Errorf("exit = %d, want %d", code, exitUsage)
+		}
+	})
+
+	t.Run("returns_exitNotFound_when_kubeconfig_missing", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		code := runUseE(
+			[]string{"any-ctx", "--kubeconfig", "/no/such/path/config", "--json"},
+			"",
+			strings.NewReader(""),
+			&stdout, &stderr,
+		)
+		if code != exitNotFound {
+			t.Errorf("exit = %d, want %d", code, exitNotFound)
+		}
+	})
+
+	t.Run("help_shows_examples", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		code := runUseE(
+			[]string{"-h"},
+			"",
+			strings.NewReader(""),
+			&stdout, &stderr,
+		)
+		if code != exitUsage {
+			t.Errorf("exit = %d, want %d", code, exitUsage)
+		}
+		if !strings.Contains(stderr.String(), "Examples:") {
+			t.Errorf("expected 'Examples:' in help, got:\n%s", stderr.String())
 		}
 	})
 }

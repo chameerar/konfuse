@@ -168,9 +168,12 @@ func writeWithBackup(path string, cfg *merger.KubeConfig) (backupPath string, er
 }
 
 // cmdUsage builds a flag.Usage closure for a subcommand.
-func cmdUsage(fs *flag.FlagSet, errw io.Writer, synopsis string, examples []string) func() {
+func cmdUsage(fs *flag.FlagSet, errw io.Writer, synopsis, description string, examples []string) func() {
 	return func() {
 		fmt.Fprintf(errw, "Usage: konfuse %s\n\n", synopsis)
+		if description != "" {
+			fmt.Fprintf(errw, "%s\n\n", description)
+		}
 		fmt.Fprintf(errw, "Flags:\n")
 		fs.SetOutput(errw)
 		fs.PrintDefaults()
@@ -252,27 +255,25 @@ func runMergeE(args []string, defaultKubeconfig string, stdin io.Reader, stdout,
 		return exitOK
 	}
 
-	if input == "" {
-		fmt.Fprintln(stderr, "Error: input file argument is required")
-		fs.Usage()
-		return exitUsage
-	}
-
 	useJSON := *jsonOutput || !isTTYStdoutFn()
+
+	if input == "" {
+		return fail(stderr, useJSON, "input file argument is required", "konfuse <path-to-kubeconfig.yaml>", exitUsage)
+	}
 
 	// Validate input file exists and is non-empty.
 	fi, statErr := os.Stat(input)
 	if os.IsNotExist(statErr) {
 		return fail(stderr, useJSON,
-			fmt.Sprintf("Input file not found: %s", input),
+			fmt.Sprintf("input file not found: %s", input),
 			"konfuse <path-to-kubeconfig.yaml>",
 			exitNotFound,
 		)
 	}
 	if statErr == nil && fi.Size() == 0 {
 		return fail(stderr, useJSON,
-			fmt.Sprintf("Input file is empty: %s", input),
-			"Ensure the file is a valid kubeconfig YAML",
+			fmt.Sprintf("input file is empty: %s", input),
+			"",
 			exitNotFound,
 		)
 	}
@@ -281,15 +282,15 @@ func runMergeE(args []string, defaultKubeconfig string, stdin io.Reader, stdout,
 	incoming, err := loadYAML(input)
 	if err != nil {
 		return fail(stderr, useJSON,
-			fmt.Sprintf("Failed to parse YAML: %s", err),
-			"Ensure the file is valid YAML",
+			fmt.Sprintf("failed to parse YAML: %s", err),
+			"",
 			exitError,
 		)
 	}
 	if incoming == nil || incoming.Kind != "Config" {
 		return fail(stderr, useJSON,
-			"Input file is not a valid kubeconfig (missing kind: Config)",
-			"Ensure the file is a valid kubeconfig YAML",
+			"input file is not a valid kubeconfig (missing kind: Config)",
+			"",
 			exitError,
 		)
 	}
@@ -302,8 +303,8 @@ func runMergeE(args []string, defaultKubeconfig string, stdin io.Reader, stdout,
 		existing, err = loadYAML(*kubeconfig)
 		if err != nil {
 			return fail(stderr, useJSON,
-				fmt.Sprintf("Failed to parse existing kubeconfig: %s", err),
-				fmt.Sprintf("Fix or remove the corrupted file: %s", *kubeconfig),
+				fmt.Sprintf("failed to parse existing kubeconfig: %s", err),
+				"",
 				exitError,
 			)
 		}
@@ -344,7 +345,7 @@ func runMergeE(args []string, defaultKubeconfig string, stdin io.Reader, stdout,
 
 	bp, err := writeWithBackup(*kubeconfig, merged)
 	if err != nil {
-		return fail(stderr, useJSON, fmt.Sprintf("Failed to write kubeconfig: %s", err), "", exitError)
+		return fail(stderr, useJSON, fmt.Sprintf("failed to write kubeconfig: %s", err), "", exitError)
 	}
 	var backupPath *string
 	if bp != "" {
@@ -379,15 +380,27 @@ func runListE(args []string, defaultKubeconfig string, stdin io.Reader, stdout, 
 	fs.SetOutput(stderr)
 	kubeconfig := fs.String("kubeconfig", defaultKubeconfig, "Path to kubeconfig")
 	jsonOutput := fs.Bool("json", false, "Output as JSON (auto-enabled when stdout is not a TTY)")
+	fs.Usage = cmdUsage(fs, stderr,
+		"list [flags]",
+		"List contexts, clusters, and users in the kubeconfig.",
+		[]string{
+			"konfuse list",
+			"konfuse list --json",
+			"konfuse list --kubeconfig /path/to/config",
+		})
 	if err := fs.Parse(args); err != nil {
 		return exitUsage
 	}
 
 	useJSON := *jsonOutput || !isTTYStdoutFn()
 
+	if _, err := os.Stat(*kubeconfig); os.IsNotExist(err) {
+		return fail(stderr, useJSON, fmt.Sprintf("kubeconfig not found: %s", *kubeconfig), "", exitNotFound)
+	}
+
 	cfg, err := loadYAML(*kubeconfig)
 	if err != nil {
-		return fail(stderr, useJSON, fmt.Sprintf("Failed to load kubeconfig: %s", err), "", exitError)
+		return fail(stderr, useJSON, fmt.Sprintf("failed to load kubeconfig: %s", err), "", exitError)
 	}
 
 	result := merger.ListEntries(cfg)
@@ -396,7 +409,7 @@ func runListE(args []string, defaultKubeconfig string, stdin io.Reader, stdout, 
 		emit(stdout, result)
 	} else {
 		if result.CurrentContext != "" {
-			fmt.Fprintf(stdout, "current-context: %s\n\n", result.CurrentContext)
+			fmt.Fprintf(stdout, "current_context: %s\n\n", result.CurrentContext)
 		}
 		fmt.Fprintln(stdout, "CONTEXTS")
 		if len(result.Contexts) == 0 {
@@ -438,6 +451,14 @@ func runDeleteE(args []string, defaultKubeconfig string, stdin io.Reader, stdout
 	kubeconfig := fs.String("kubeconfig", defaultKubeconfig, "Path to kubeconfig")
 	jsonOutput := fs.Bool("json", false, "Output as JSON (auto-enabled when stdout is not a TTY)")
 	yes := fs.Bool("yes", false, "Skip confirmation prompts (also auto-skipped in non-TTY / piped contexts)")
+	fs.Usage = cmdUsage(fs, stderr,
+		"delete <context-name> [flags]",
+		"Delete a context from the kubeconfig and remove its cluster/user if no longer referenced.",
+		[]string{
+			"konfuse delete my-context",
+			"konfuse delete my-context --yes",
+			"konfuse delete my-context --kubeconfig /path/to/config --json",
+		})
 	if err := fs.Parse(flagArgs); err != nil {
 		return exitUsage
 	}
@@ -448,9 +469,13 @@ func runDeleteE(args []string, defaultKubeconfig string, stdin io.Reader, stdout
 		return fail(stderr, useJSON, "context name is required", "konfuse delete <context-name>", exitUsage)
 	}
 
+	if _, err := os.Stat(*kubeconfig); os.IsNotExist(err) {
+		return fail(stderr, useJSON, fmt.Sprintf("kubeconfig not found: %s", *kubeconfig), "", exitNotFound)
+	}
+
 	cfg, err := loadYAML(*kubeconfig)
 	if err != nil {
-		return fail(stderr, useJSON, fmt.Sprintf("Failed to load kubeconfig: %s", err), "", exitError)
+		return fail(stderr, useJSON, fmt.Sprintf("failed to load kubeconfig: %s", err), "", exitError)
 	}
 
 	cfg, result, err := merger.DeleteContext(cfg, contextName)
@@ -465,7 +490,7 @@ func runDeleteE(args []string, defaultKubeconfig string, stdin io.Reader, stdout
 
 	bp, err := writeWithBackup(*kubeconfig, cfg)
 	if err != nil {
-		return fail(stderr, useJSON, fmt.Sprintf("Failed to write kubeconfig: %s", err), "", exitError)
+		return fail(stderr, useJSON, fmt.Sprintf("failed to write kubeconfig: %s", err), "", exitError)
 	}
 	var backupPath *string
 	if bp != "" {
@@ -504,6 +529,14 @@ func runUseE(args []string, defaultKubeconfig string, stdin io.Reader, stdout, s
 	// --yes is accepted for scripting symmetry with merge/delete; use is non-
 	// destructive and never prompts, so the flag has no effect here.
 	_ = fs.Bool("yes", false, "Accepted for symmetry with merge/delete; use never prompts")
+	fs.Usage = cmdUsage(fs, stderr,
+		"use <context-name> [flags]",
+		"Switch the active context (sets current-context). No-op when already on the requested context.",
+		[]string{
+			"konfuse use prod",
+			"konfuse use prod --kubeconfig /path/to/config",
+			"konfuse use prod --json",
+		})
 	if err := fs.Parse(flagArgs); err != nil {
 		return exitUsage
 	}
@@ -514,9 +547,13 @@ func runUseE(args []string, defaultKubeconfig string, stdin io.Reader, stdout, s
 		return fail(stderr, useJSON, "context name is required", "konfuse use <context-name>", exitUsage)
 	}
 
+	if _, err := os.Stat(*kubeconfig); os.IsNotExist(err) {
+		return fail(stderr, useJSON, fmt.Sprintf("kubeconfig not found: %s", *kubeconfig), "", exitNotFound)
+	}
+
 	cfg, err := loadYAML(*kubeconfig)
 	if err != nil {
-		return fail(stderr, useJSON, fmt.Sprintf("Failed to load kubeconfig: %s", err), "", exitError)
+		return fail(stderr, useJSON, fmt.Sprintf("failed to load kubeconfig: %s", err), "", exitError)
 	}
 
 	cfg, result, err := merger.UseContext(cfg, contextName)
@@ -529,7 +566,7 @@ func runUseE(args []string, defaultKubeconfig string, stdin io.Reader, stdout, s
 	if result.Changed {
 		bp, werr := writeWithBackup(*kubeconfig, cfg)
 		if werr != nil {
-			return fail(stderr, useJSON, fmt.Sprintf("Failed to write kubeconfig: %s", werr), "", exitError)
+			return fail(stderr, useJSON, fmt.Sprintf("failed to write kubeconfig: %s", werr), "", exitError)
 		}
 		if bp != "" {
 			backupPath = &bp

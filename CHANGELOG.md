@@ -15,9 +15,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 - `delete` and `use` JSON output now include a `target` field and emit `backup: null` when no backup was created (previously the `backup` key was omitted via `omitempty`).
+- `list` human output uses `current_context:` (underscore) to match the JSON field. Scripts grepping for `current-context:` should switch to `--json`.
+- Error messages are now lowercase (matching Go convention) and prose hints have been removed; remaining hints are runnable `konfuse ...` commands.
 
 ### Fixed
 - `konfuse delete <context-name> --kubeconfig PATH` now respects flags placed after the positional argument (previously the flag was silently ignored)
+- `konfuse --json` (with no input file) now emits a JSON-formatted error instead of the plain-text "Error: input file argument is required" — the bare error path bypassed JSON-mode detection.
+- `konfuse list`, `konfuse delete`, `konfuse use` now exit with code 3 (file not found) when the kubeconfig path doesn't exist; previously they surfaced a less specific exit-1 load error.
+- `konfuse list -h`, `konfuse delete -h`, `konfuse use -h` show a synopsis, description, and examples instead of bare flag defaults.
 
 ---
 

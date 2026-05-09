@@ -35,6 +35,18 @@ type mergeOutput struct {
 	HasConflicts bool               `json:"has_conflicts"`
 }
 
+type deleteOutput struct {
+	Target  string              `json:"target"`
+	Backup  *string             `json:"backup"`
+	Deleted merger.DeleteResult `json:"deleted"`
+}
+
+type useOutput struct {
+	Target string           `json:"target"`
+	Backup *string          `json:"backup"`
+	Used   merger.UseResult `json:"used"`
+}
+
 type errorOutput struct {
 	Error string `json:"error"`
 	Hint  string `json:"hint,omitempty"`
@@ -62,6 +74,13 @@ func isTTYStdin() bool {
 	}
 	return (fi.Mode() & os.ModeCharDevice) != 0
 }
+
+// isTTYStdinFn / isTTYStdoutFn are package-level indirections so tests can
+// simulate an interactive terminal without manipulating os.Stdin / os.Stdout.
+var (
+	isTTYStdinFn  = isTTYStdin
+	isTTYStdoutFn = isTTYStdout
+)
 
 // emit writes data to out as indented JSON.
 func emit(out io.Writer, data interface{}) {
@@ -198,7 +217,6 @@ func runMergeE(args []string, defaultKubeconfig string, stdin io.Reader, stdout,
 	dryRun := fs.Bool("dry-run", false, "Preview what would be merged without writing any changes")
 	jsonOutput := fs.Bool("json", false, "Output results as JSON (auto-enabled when stdout is not a TTY)")
 	yes := fs.Bool("yes", false, "Skip confirmation prompts (also auto-skipped in non-TTY / piped contexts)")
-	_ = yes // wired in PR 2
 
 	fs.Usage = func() {
 		fmt.Fprintf(stderr, "Usage: konfuse <input.yaml> [flags]\n")
@@ -240,7 +258,7 @@ func runMergeE(args []string, defaultKubeconfig string, stdin io.Reader, stdout,
 		return exitUsage
 	}
 
-	useJSON := *jsonOutput || !isTTYStdout()
+	useJSON := *jsonOutput || !isTTYStdoutFn()
 
 	// Validate input file exists and is non-empty.
 	fi, statErr := os.Stat(input)
@@ -317,20 +335,20 @@ func runMergeE(args []string, defaultKubeconfig string, stdin io.Reader, stdout,
 		return exitOK
 	}
 
-	// Backup then save.
-	var backupPath *string
 	if existingPathExists {
-		bp, err := merger.BackupConfig(*kubeconfig)
-		if err != nil {
-			return fail(stderr, useJSON, fmt.Sprintf("Failed to create backup: %s", err), "", exitError)
-		}
-		if bp != "" {
-			backupPath = &bp
+		prompt := fmt.Sprintf("Merge into %s? (will be backed up)", *kubeconfig)
+		if !confirm(stdin, stderr, prompt, useJSON, *yes, isTTYStdinFn()) {
+			return fail(stderr, useJSON, "aborted by user", "", exitUsage)
 		}
 	}
 
-	if err := saveYAML(*kubeconfig, merged); err != nil {
+	bp, err := writeWithBackup(*kubeconfig, merged)
+	if err != nil {
 		return fail(stderr, useJSON, fmt.Sprintf("Failed to write kubeconfig: %s", err), "", exitError)
+	}
+	var backupPath *string
+	if bp != "" {
+		backupPath = &bp
 	}
 
 	if useJSON {
@@ -353,7 +371,6 @@ func runMergeE(args []string, defaultKubeconfig string, stdin io.Reader, stdout,
 		fmt.Fprintf(stdout, "\nsaved: %s\n", *kubeconfig)
 	}
 
-	_ = stdin // reserved for confirm prompt in PR 2
 	return exitOK
 }
 
@@ -366,7 +383,7 @@ func runListE(args []string, defaultKubeconfig string, stdin io.Reader, stdout, 
 		return exitUsage
 	}
 
-	useJSON := *jsonOutput || !isTTYStdout()
+	useJSON := *jsonOutput || !isTTYStdoutFn()
 
 	cfg, err := loadYAML(*kubeconfig)
 	if err != nil {
@@ -420,11 +437,12 @@ func runDeleteE(args []string, defaultKubeconfig string, stdin io.Reader, stdout
 	fs.SetOutput(stderr)
 	kubeconfig := fs.String("kubeconfig", defaultKubeconfig, "Path to kubeconfig")
 	jsonOutput := fs.Bool("json", false, "Output as JSON (auto-enabled when stdout is not a TTY)")
+	yes := fs.Bool("yes", false, "Skip confirmation prompts (also auto-skipped in non-TTY / piped contexts)")
 	if err := fs.Parse(flagArgs); err != nil {
 		return exitUsage
 	}
 
-	useJSON := *jsonOutput || !isTTYStdout()
+	useJSON := *jsonOutput || !isTTYStdoutFn()
 
 	if contextName == "" {
 		return fail(stderr, useJSON, "context name is required", "konfuse delete <context-name>", exitUsage)
@@ -435,32 +453,34 @@ func runDeleteE(args []string, defaultKubeconfig string, stdin io.Reader, stdout
 		return fail(stderr, useJSON, fmt.Sprintf("Failed to load kubeconfig: %s", err), "", exitError)
 	}
 
-	// Backup before modifying.
-	bp, err := merger.BackupConfig(*kubeconfig)
-	if err != nil {
-		return fail(stderr, useJSON, fmt.Sprintf("Failed to create backup: %s", err), "", exitError)
-	}
-
 	cfg, result, err := merger.DeleteContext(cfg, contextName)
 	if err != nil {
 		return fail(stderr, useJSON, err.Error(), "konfuse list", exitError)
 	}
 
-	if err := saveYAML(*kubeconfig, cfg); err != nil {
+	prompt := fmt.Sprintf("Delete context %q from %s?", contextName, *kubeconfig)
+	if !confirm(stdin, stderr, prompt, useJSON, *yes, isTTYStdinFn()) {
+		return fail(stderr, useJSON, "aborted by user", "", exitUsage)
+	}
+
+	bp, err := writeWithBackup(*kubeconfig, cfg)
+	if err != nil {
 		return fail(stderr, useJSON, fmt.Sprintf("Failed to write kubeconfig: %s", err), "", exitError)
+	}
+	var backupPath *string
+	if bp != "" {
+		backupPath = &bp
 	}
 
 	if useJSON {
-		emit(stdout, struct {
-			Deleted merger.DeleteResult `json:"deleted"`
-			Backup  string              `json:"backup,omitempty"`
-		}{
+		emit(stdout, deleteOutput{
+			Target:  *kubeconfig,
+			Backup:  backupPath,
 			Deleted: result,
-			Backup:  bp,
 		})
 	} else {
-		if bp != "" {
-			fmt.Fprintf(stdout, "backup: %s\n\n", bp)
+		if backupPath != nil {
+			fmt.Fprintf(stdout, "backup: %s\n\n", *backupPath)
 		}
 		fmt.Fprintf(stdout, "  - Deleted context: %s\n", result.Context)
 		if result.Cluster != "" {
@@ -471,7 +491,6 @@ func runDeleteE(args []string, defaultKubeconfig string, stdin io.Reader, stdout
 		}
 		fmt.Fprintf(stdout, "\nsaved: %s\n", *kubeconfig)
 	}
-	_ = stdin
 	return exitOK
 }
 
@@ -482,11 +501,14 @@ func runUseE(args []string, defaultKubeconfig string, stdin io.Reader, stdout, s
 	fs.SetOutput(stderr)
 	kubeconfig := fs.String("kubeconfig", defaultKubeconfig, "Path to kubeconfig")
 	jsonOutput := fs.Bool("json", false, "Output as JSON (auto-enabled when stdout is not a TTY)")
+	// --yes is accepted for scripting symmetry with merge/delete; use is non-
+	// destructive and never prompts, so the flag has no effect here.
+	_ = fs.Bool("yes", false, "Accepted for symmetry with merge/delete; use never prompts")
 	if err := fs.Parse(flagArgs); err != nil {
 		return exitUsage
 	}
 
-	useJSON := *jsonOutput || !isTTYStdout()
+	useJSON := *jsonOutput || !isTTYStdoutFn()
 
 	if contextName == "" {
 		return fail(stderr, useJSON, "context name is required", "konfuse use <context-name>", exitUsage)
@@ -503,32 +525,30 @@ func runUseE(args []string, defaultKubeconfig string, stdin io.Reader, stdout, s
 	}
 
 	// Skip the write (and the backup) when nothing changed.
-	var backupPath string
+	var backupPath *string
 	if result.Changed {
-		backupPath, err = merger.BackupConfig(*kubeconfig)
-		if err != nil {
-			return fail(stderr, useJSON, fmt.Sprintf("Failed to create backup: %s", err), "", exitError)
+		bp, werr := writeWithBackup(*kubeconfig, cfg)
+		if werr != nil {
+			return fail(stderr, useJSON, fmt.Sprintf("Failed to write kubeconfig: %s", werr), "", exitError)
 		}
-		if err := saveYAML(*kubeconfig, cfg); err != nil {
-			return fail(stderr, useJSON, fmt.Sprintf("Failed to write kubeconfig: %s", err), "", exitError)
+		if bp != "" {
+			backupPath = &bp
 		}
 	}
 
 	if useJSON {
-		emit(stdout, struct {
-			Used   merger.UseResult `json:"used"`
-			Backup string           `json:"backup,omitempty"`
-		}{
-			Used:   result,
+		emit(stdout, useOutput{
+			Target: *kubeconfig,
 			Backup: backupPath,
+			Used:   result,
 		})
 	} else {
 		if !result.Changed {
 			fmt.Fprintf(stdout, "already on context: %s\n", result.Context)
 			return exitOK
 		}
-		if backupPath != "" {
-			fmt.Fprintf(stdout, "backup: %s\n\n", backupPath)
+		if backupPath != nil {
+			fmt.Fprintf(stdout, "backup: %s\n\n", *backupPath)
 		}
 		if result.Previous != "" {
 			fmt.Fprintf(stdout, "switched context: %s -> %s\n", result.Previous, result.Context)

@@ -10,6 +10,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 - `konfuse use <context-name>` — switch the active context (sets `current-context`); supports `--kubeconfig` and `--json`
 - Backup is written only when `use` actually changes the current context (no-op switches leave the file untouched)
+- Confirmation prompt before destructive writes on `merge` (when target exists) and `delete`. Auto-skipped in non-TTY contexts (pipes / CI), with `--json`, or with `--yes`. The `--yes` flag is now wired (previously declared but ignored).
+- `--yes` is accepted on `use` for scripting symmetry, though `use` never prompts.
+
+### Changed
+- `delete` and `use` JSON output now include a `target` field and emit `backup: null` when no backup was created (previously the `backup` key was omitted via `omitempty`).
 
 ### Fixed
 - `konfuse delete <context-name> --kubeconfig PATH` now respects flags placed after the positional argument (previously the flag was silently ignored)

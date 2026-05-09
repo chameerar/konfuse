@@ -648,6 +648,84 @@ current-context: ""
 		}
 	})
 
+	t.Run("prompts_and_aborts_on_n", func(t *testing.T) {
+		dir := t.TempDir()
+		input := writeTempFile(t, incomingYAML)
+		target := filepath.Join(dir, "config")
+		if err := os.WriteFile(target, []byte("apiVersion: v1\nkind: Config\n"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		original, _ := os.ReadFile(target)
+
+		withFakeTTYStdin(t)
+
+		var stdout, stderr bytes.Buffer
+		code := runMergeE(
+			[]string{input, "--kubeconfig", target},
+			"",
+			strings.NewReader("n\n"),
+			&stdout, &stderr,
+		)
+		if code != exitUsage {
+			t.Errorf("exit = %d, want %d (abort), stderr: %s", code, exitUsage, stderr.String())
+		}
+		if !strings.Contains(stderr.String(), "Merge into") {
+			t.Errorf("expected prompt in stderr, got %q", stderr.String())
+		}
+		// Target file untouched.
+		after, _ := os.ReadFile(target)
+		if string(after) != string(original) {
+			t.Error("target was modified despite abort")
+		}
+	})
+
+	t.Run("yes_flag_skips_prompt", func(t *testing.T) {
+		dir := t.TempDir()
+		input := writeTempFile(t, incomingYAML)
+		target := filepath.Join(dir, "config")
+		if err := os.WriteFile(target, []byte("apiVersion: v1\nkind: Config\n"), 0600); err != nil {
+			t.Fatal(err)
+		}
+
+		withFakeTTYStdin(t)
+
+		var stdout, stderr bytes.Buffer
+		code := runMergeE(
+			[]string{input, "--kubeconfig", target, "--yes"},
+			"",
+			strings.NewReader(""),
+			&stdout, &stderr,
+		)
+		if code != exitOK {
+			t.Errorf("exit = %d, stderr: %s", code, stderr.String())
+		}
+		if strings.Contains(stderr.String(), "Merge into") {
+			t.Errorf("expected no prompt with --yes, got %q", stderr.String())
+		}
+	})
+
+	t.Run("no_prompt_for_fresh_target", func(t *testing.T) {
+		dir := t.TempDir()
+		input := writeTempFile(t, incomingYAML)
+		target := filepath.Join(dir, "fresh-config")
+
+		withFakeTTYStdin(t)
+
+		var stdout, stderr bytes.Buffer
+		code := runMergeE(
+			[]string{input, "--kubeconfig", target},
+			"",
+			strings.NewReader(""),
+			&stdout, &stderr,
+		)
+		if code != exitOK {
+			t.Errorf("exit = %d, stderr: %s", code, stderr.String())
+		}
+		if strings.Contains(stderr.String(), "Merge into") {
+			t.Errorf("no prompt expected for fresh target, got %q", stderr.String())
+		}
+	})
+
 	t.Run("rename_flags_apply_to_first_entry", func(t *testing.T) {
 		dir := t.TempDir()
 		input := writeTempFile(t, incomingYAML)
@@ -816,10 +894,7 @@ current-context: ctx1
 		if code != exitOK {
 			t.Fatalf("exit = %d, stderr: %s", code, stderr.String())
 		}
-		var got struct {
-			Deleted merger.DeleteResult `json:"deleted"`
-			Backup  string              `json:"backup"`
-		}
+		var got deleteOutput
 		if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
 			t.Fatalf("invalid JSON: %v\n%s", err, stdout.String())
 		}
@@ -832,8 +907,11 @@ current-context: ctx1
 		if got.Deleted.User != "u2" {
 			t.Errorf("deleted.user = %q, want u2", got.Deleted.User)
 		}
-		if got.Backup == "" {
-			t.Error("expected non-empty backup path")
+		if got.Backup == nil || *got.Backup == "" {
+			t.Error("expected non-nil backup path")
+		}
+		if got.Target != path {
+			t.Errorf("target = %q, want %q", got.Target, path)
 		}
 	})
 
@@ -879,6 +957,107 @@ current-context: ctx1
 			t.Errorf("exit = %d, expected ctx2 to delete from --kubeconfig path; stderr: %s", code, stderr.String())
 		}
 	})
+
+	t.Run("prompts_and_aborts_on_n", func(t *testing.T) {
+		path := writeTempFile(t, yamlBody)
+		original, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		withFakeTTYStdin(t)
+
+		var stdout, stderr bytes.Buffer
+		code := runDeleteE(
+			[]string{"ctx2", "--kubeconfig", path},
+			"",
+			strings.NewReader("n\n"),
+			&stdout, &stderr,
+		)
+		if code != exitUsage {
+			t.Errorf("exit = %d, want %d (abort)", code, exitUsage)
+		}
+		if !strings.Contains(stderr.String(), "Delete context") {
+			t.Errorf("expected prompt in stderr, got %q", stderr.String())
+		}
+		// File untouched.
+		after, _ := os.ReadFile(path)
+		if string(after) != string(original) {
+			t.Error("kubeconfig was modified despite abort")
+		}
+	})
+
+	t.Run("prompts_and_proceeds_on_y", func(t *testing.T) {
+		path := writeTempFile(t, yamlBody)
+		withFakeTTYStdin(t)
+
+		var stdout, stderr bytes.Buffer
+		code := runDeleteE(
+			[]string{"ctx2", "--kubeconfig", path, "--json"},
+			"",
+			strings.NewReader("y\n"),
+			&stdout, &stderr,
+		)
+		// --json forces auto-proceed; the prompt should NOT appear.
+		// Behavior: useJSON=true → no prompt → proceed → exit 0.
+		if code != exitOK {
+			t.Errorf("exit = %d, stderr: %s", code, stderr.String())
+		}
+	})
+
+	t.Run("yes_flag_skips_prompt", func(t *testing.T) {
+		path := writeTempFile(t, yamlBody)
+		withFakeTTYStdin(t)
+
+		var stdout, stderr bytes.Buffer
+		// Empty stdin — would block if a prompt fired. --yes must skip it.
+		code := runDeleteE(
+			[]string{"ctx2", "--kubeconfig", path, "--yes"},
+			"",
+			strings.NewReader(""),
+			&stdout, &stderr,
+		)
+		if code != exitOK {
+			t.Errorf("exit = %d, stderr: %s", code, stderr.String())
+		}
+		if strings.Contains(stderr.String(), "Delete context") {
+			t.Errorf("expected no prompt with --yes, got %q", stderr.String())
+		}
+	})
+
+	t.Run("non_tty_stdin_skips_prompt", func(t *testing.T) {
+		path := writeTempFile(t, yamlBody)
+		// Don't override TTY — default behavior in tests is non-TTY.
+		var stdout, stderr bytes.Buffer
+		code := runDeleteE(
+			[]string{"ctx2", "--kubeconfig", path},
+			"",
+			strings.NewReader(""),
+			&stdout, &stderr,
+		)
+		if code != exitOK {
+			t.Errorf("exit = %d, stderr: %s", code, stderr.String())
+		}
+	})
+
+	t.Run("prompt_skipped_when_context_missing", func(t *testing.T) {
+		path := writeTempFile(t, yamlBody)
+		withFakeTTYStdin(t)
+
+		var stdout, stderr bytes.Buffer
+		code := runDeleteE(
+			[]string{"nonexistent", "--kubeconfig", path},
+			"",
+			strings.NewReader(""),
+			&stdout, &stderr,
+		)
+		if code != exitError {
+			t.Errorf("exit = %d, want %d", code, exitError)
+		}
+		if strings.Contains(stderr.String(), "Delete context") {
+			t.Errorf("prompt should not appear when context missing, got %q", stderr.String())
+		}
+	})
 }
 
 // ---------------------------------------------------------------------------
@@ -921,10 +1100,7 @@ current-context: ctx1
 		if code != exitOK {
 			t.Fatalf("exit = %d, stderr: %s", code, stderr.String())
 		}
-		var got struct {
-			Used   merger.UseResult `json:"used"`
-			Backup string           `json:"backup"`
-		}
+		var got useOutput
 		if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
 			t.Fatalf("invalid JSON: %v", err)
 		}
@@ -934,8 +1110,8 @@ current-context: ctx1
 		if got.Used.Previous != "ctx1" || got.Used.Context != "ctx2" {
 			t.Errorf("got %+v, want previous=ctx1 context=ctx2", got.Used)
 		}
-		if got.Backup == "" {
-			t.Error("expected backup when context changed")
+		if got.Backup == nil || *got.Backup == "" {
+			t.Error("expected non-nil backup when context changed")
 		}
 	})
 
@@ -951,18 +1127,29 @@ current-context: ctx1
 		if code != exitOK {
 			t.Fatalf("exit = %d, stderr: %s", code, stderr.String())
 		}
-		var got struct {
-			Used   merger.UseResult `json:"used"`
-			Backup string           `json:"backup"`
-		}
+		var got useOutput
 		if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
 			t.Fatalf("invalid JSON: %v", err)
 		}
 		if got.Used.Changed {
 			t.Error("used.changed should be false for no-op")
 		}
-		if got.Backup != "" {
-			t.Errorf("expected no backup for no-op, got %q", got.Backup)
+		if got.Backup != nil {
+			t.Errorf("expected nil backup for no-op, got %v", *got.Backup)
+		}
+	})
+
+	t.Run("yes_flag_accepted_for_symmetry", func(t *testing.T) {
+		path := writeTempFile(t, yamlBody)
+		var stdout, stderr bytes.Buffer
+		code := runUseE(
+			[]string{"ctx2", "--kubeconfig", path, "--json", "--yes"},
+			"",
+			strings.NewReader(""),
+			&stdout, &stderr,
+		)
+		if code != exitOK {
+			t.Errorf("exit = %d, stderr: %s", code, stderr.String())
 		}
 	})
 
@@ -1019,4 +1206,18 @@ func contains(haystack []string, needle string) bool {
 		}
 	}
 	return false
+}
+
+// withFakeTTYStdin makes the run* functions believe both stdin and stdout
+// are interactive terminals — needed to exercise the human-output / prompt
+// path. Restored automatically via t.Cleanup.
+func withFakeTTYStdin(t *testing.T) {
+	t.Helper()
+	prevIn, prevOut := isTTYStdinFn, isTTYStdoutFn
+	isTTYStdinFn = func() bool { return true }
+	isTTYStdoutFn = func() bool { return true }
+	t.Cleanup(func() {
+		isTTYStdinFn = prevIn
+		isTTYStdoutFn = prevOut
+	})
 }

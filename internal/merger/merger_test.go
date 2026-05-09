@@ -999,3 +999,116 @@ func TestDeleteContext(t *testing.T) {
 		}
 	})
 }
+
+// ---------------------------------------------------------------------------
+// UseContext
+// ---------------------------------------------------------------------------
+
+func TestUseContext(t *testing.T) {
+	t.Run("switches_current_context", func(t *testing.T) {
+		cfg := makeKubeConfig(
+			[]merger.NamedEntry{makeCluster("c1", "https://example.com"), makeCluster("c2", "https://example.com")},
+			[]merger.NamedEntry{makeUser("u1", "tok"), makeUser("u2", "tok")},
+			[]merger.NamedEntry{makeContext("ctx1", "c1", "u1"), makeContext("ctx2", "c2", "u2")},
+		)
+		cfg.CurrentContext = "ctx1"
+
+		got, result, err := merger.UseContext(cfg, "ctx2")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.CurrentContext != "ctx2" {
+			t.Errorf("CurrentContext = %q, want ctx2", got.CurrentContext)
+		}
+		if result.Context != "ctx2" {
+			t.Errorf("result.Context = %q, want ctx2", result.Context)
+		}
+		if result.Previous != "ctx1" {
+			t.Errorf("result.Previous = %q, want ctx1", result.Previous)
+		}
+		if !result.Changed {
+			t.Error("result.Changed should be true")
+		}
+	})
+
+	t.Run("noop_when_already_current", func(t *testing.T) {
+		cfg := makeKubeConfig(
+			[]merger.NamedEntry{makeCluster("c1", "https://example.com")},
+			[]merger.NamedEntry{makeUser("u1", "tok")},
+			[]merger.NamedEntry{makeContext("ctx1", "c1", "u1")},
+		)
+		cfg.CurrentContext = "ctx1"
+
+		got, result, err := merger.UseContext(cfg, "ctx1")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.CurrentContext != "ctx1" {
+			t.Errorf("CurrentContext = %q, want ctx1", got.CurrentContext)
+		}
+		if result.Changed {
+			t.Error("result.Changed should be false when already current")
+		}
+		if result.Previous != "ctx1" {
+			t.Errorf("result.Previous = %q, want ctx1", result.Previous)
+		}
+	})
+
+	t.Run("sets_when_no_current_context", func(t *testing.T) {
+		cfg := makeKubeConfig(
+			[]merger.NamedEntry{makeCluster("c1", "https://example.com")},
+			[]merger.NamedEntry{makeUser("u1", "tok")},
+			[]merger.NamedEntry{makeContext("ctx1", "c1", "u1")},
+		)
+		// CurrentContext is empty.
+
+		got, result, err := merger.UseContext(cfg, "ctx1")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.CurrentContext != "ctx1" {
+			t.Errorf("CurrentContext = %q, want ctx1", got.CurrentContext)
+		}
+		if result.Previous != "" {
+			t.Errorf("result.Previous = %q, want empty", result.Previous)
+		}
+		if !result.Changed {
+			t.Error("result.Changed should be true when previous was empty")
+		}
+	})
+
+	t.Run("error_on_missing_context", func(t *testing.T) {
+		cfg := makeKubeConfig(
+			[]merger.NamedEntry{makeCluster("c1", "https://example.com")},
+			[]merger.NamedEntry{makeUser("u1", "tok")},
+			[]merger.NamedEntry{makeContext("ctx1", "c1", "u1")},
+		)
+		cfg.CurrentContext = "ctx1"
+
+		_, _, err := merger.UseContext(cfg, "nonexistent")
+		if err == nil {
+			t.Fatal("expected error for missing context")
+		}
+		if !strings.Contains(err.Error(), "nonexistent") {
+			t.Errorf("error = %q, should contain context name", err.Error())
+		}
+		if cfg.CurrentContext != "ctx1" {
+			t.Errorf("CurrentContext = %q, want ctx1 (must not change on error)", cfg.CurrentContext)
+		}
+	})
+
+	t.Run("does_not_modify_other_fields", func(t *testing.T) {
+		cfg := makeKubeConfig(
+			[]merger.NamedEntry{makeCluster("c1", "https://example.com"), makeCluster("c2", "https://example.com")},
+			[]merger.NamedEntry{makeUser("u1", "tok"), makeUser("u2", "tok")},
+			[]merger.NamedEntry{makeContext("ctx1", "c1", "u1"), makeContext("ctx2", "c2", "u2")},
+		)
+		got, _, err := merger.UseContext(cfg, "ctx2")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(got.Clusters) != 2 || len(got.Users) != 2 || len(got.Contexts) != 2 {
+			t.Error("clusters/users/contexts must be unchanged")
+		}
+	})
+}

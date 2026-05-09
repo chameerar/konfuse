@@ -7,6 +7,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- `konfuse use <context-name>` — switch the active context (sets `current-context`); supports `--kubeconfig` and `--json`
+- Backup is written only when `use` actually changes the current context (no-op switches leave the file untouched)
+
+### Fixed
+- `konfuse delete <context-name> --kubeconfig PATH` now respects flags placed after the positional argument (previously the flag was silently ignored)
+
 ---
 
 ## [0.2.0] - 2026-04-01

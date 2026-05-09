@@ -105,6 +105,21 @@ konfuse new-cluster.yaml --kubeconfig ~/.kube/work-config
 | `--yes` | Non-interactive mode — skip all prompts |
 | `--kubeconfig PATH` | Target kubeconfig (default: `~/.kube/config`) |
 
+## Managing contexts
+
+```bash
+# List contexts, clusters, and users (current context marked with *)
+konfuse list
+
+# Switch the active context
+konfuse use prod
+
+# Delete a context (also removes its cluster/user if no longer referenced)
+konfuse delete old-staging
+```
+
+`use` and `delete` create a timestamped backup before writing. `use` is a no-op (no backup, no write) when you're already on the requested context. All three subcommands accept `--kubeconfig PATH` and `--json`.
+
 ## Example: EKS config with a friendly name
 
 You receive `eks-staging.yaml` with context named `arn:aws:eks:us-east-1:123456789:cluster/staging`. Run:

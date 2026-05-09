@@ -55,6 +55,7 @@ internal/merger/
 - Only the **first** cluster/context/user in the incoming file is renamed; others pass through unchanged
 - When `--rename-cluster` is set, the cluster reference inside the first context is also updated
 - When `--rename-user` is set, the user reference inside the first context is also updated
+- `konfuse use <context>` switches `current-context`; backup is only written when the value actually changes
 - `--json` is auto-enabled when stdout is not a TTY (pipes, CI)
 - Exit codes: 0 ok, 1 error, 2 usage error, 3 file not found
 

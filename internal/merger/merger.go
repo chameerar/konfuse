@@ -308,6 +308,29 @@ func DeleteContext(cfg *KubeConfig, contextName string) (*KubeConfig, DeleteResu
 	return cfg, result, nil
 }
 
+// UseResult records the outcome of a context switch.
+type UseResult struct {
+	Context  string `json:"context"`
+	Previous string `json:"previous,omitempty"`
+	Changed  bool   `json:"changed"`
+}
+
+// UseContext sets current-context to contextName. Returns an error if the
+// context is not present in cfg.Contexts. Changed is false when the context
+// was already current.
+func UseContext(cfg *KubeConfig, contextName string) (*KubeConfig, UseResult, error) {
+	if findByName(cfg.Contexts, contextName) < 0 {
+		return cfg, UseResult{}, fmt.Errorf("context %q not found", contextName)
+	}
+	result := UseResult{
+		Context:  contextName,
+		Previous: cfg.CurrentContext,
+		Changed:  cfg.CurrentContext != contextName,
+	}
+	cfg.CurrentContext = contextName
+	return cfg, result, nil
+}
+
 // isClusterReferenced returns true if any context references the given cluster.
 func isClusterReferenced(contexts []NamedEntry, cluster string) bool {
 	for _, ctx := range contexts {

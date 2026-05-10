@@ -167,18 +167,29 @@ func writeWithBackup(path string, cfg *merger.KubeConfig) (backupPath string, er
 	return backupPath, nil
 }
 
-// cmdUsage builds a flag.Usage closure for a subcommand.
-func cmdUsage(fs *flag.FlagSet, errw io.Writer, synopsis, description string, examples []string) func() {
+// cmdUsage builds a flag.Usage closure for a subcommand. The args slice is
+// rendered as an "Arguments:" section before the flags so required positionals
+// are visible in -h output.
+func cmdUsage(fs *flag.FlagSet, errw io.Writer, synopsis, description string, args, examples []string) func() {
 	return func() {
 		fmt.Fprintf(errw, "Usage: konfuse %s\n\n", synopsis)
 		if description != "" {
 			fmt.Fprintf(errw, "%s\n\n", description)
 		}
-		fmt.Fprintf(errw, "Flags:\n")
+		if len(args) > 0 {
+			fmt.Fprintln(errw, "Arguments:")
+			for _, a := range args {
+				fmt.Fprintf(errw, "  %s\n", a)
+			}
+			fmt.Fprintln(errw)
+		}
+		fmt.Fprintln(errw, "Flags:")
 		fs.SetOutput(errw)
 		fs.PrintDefaults()
+		fmt.Fprintln(errw, "  -h, --help")
+		fmt.Fprintln(errw, "    \tShow this help and exit")
 		if len(examples) > 0 {
-			fmt.Fprintf(errw, "\nExamples:\n")
+			fmt.Fprintln(errw, "\nExamples:")
 			for _, ex := range examples {
 				fmt.Fprintf(errw, "  %s\n", ex)
 			}
@@ -186,13 +197,58 @@ func cmdUsage(fs *flag.FlagSet, errw io.Writer, synopsis, description string, ex
 	}
 }
 
+// printTopLevelUsage is shown by `konfuse --help` (no subcommand).
+func printTopLevelUsage(errw io.Writer) {
+	fmt.Fprintln(errw, "Usage: konfuse <command> [flags]")
+	fmt.Fprintln(errw, "       konfuse <input.yaml> [flags]   (shortcut for `konfuse merge <input.yaml>`)")
+	fmt.Fprintln(errw)
+	fmt.Fprintln(errw, "Manage Kubernetes kubeconfig files: merge, list, switch context, delete context.")
+	fmt.Fprintln(errw)
+	fmt.Fprintln(errw, "Commands:")
+	fmt.Fprintln(errw, "  merge <file>      Merge a kubeconfig file into the target kubeconfig")
+	fmt.Fprintln(errw, "  list              List contexts, clusters, and users in the kubeconfig")
+	fmt.Fprintln(errw, "  use <context>     Switch the active context (sets current-context)")
+	fmt.Fprintln(errw, "  delete <context>  Delete a context and any orphaned cluster/user")
+	fmt.Fprintln(errw)
+	fmt.Fprintln(errw, "Flags:")
+	fmt.Fprintln(errw, "  -h, --help        Show help (use `konfuse <command> -h` for command-specific help)")
+	fmt.Fprintln(errw, "      --version     Print version and exit")
+}
+
+// hasTopLevelFlag scans args for an exact match of the given strings before any
+// "--" separator. Used to make --version / --help work regardless of position.
+func hasTopLevelFlag(args []string, flags ...string) bool {
+	for _, arg := range args {
+		if arg == "--" {
+			return false
+		}
+		for _, f := range flags {
+			if arg == f {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func main() {
 	home, _ := os.UserHomeDir()
 	defaultKubeconfig := filepath.Join(home, ".kube", "config")
 
-	// Check for subcommands before flag parsing.
+	// --version short-circuits everything. Works at any position so users
+	// can drop it next to a file path or after a subcommand without thinking.
+	if hasTopLevelFlag(os.Args[1:], "--version", "-version") {
+		fmt.Printf("konfuse %s\n", version)
+		os.Exit(exitOK)
+	}
+
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
+		case "--help", "-help", "-h":
+			printTopLevelUsage(os.Stderr)
+			os.Exit(exitOK)
+		case "merge":
+			os.Exit(runMergeE(os.Args[2:], defaultKubeconfig, os.Stdin, os.Stdout, os.Stderr))
 		case "list":
 			os.Exit(runListE(os.Args[2:], defaultKubeconfig, os.Stdin, os.Stdout, os.Stderr))
 		case "delete":
@@ -212,53 +268,33 @@ func main() {
 func runMergeE(args []string, defaultKubeconfig string, stdin io.Reader, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("merge", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	showVersion := fs.Bool("version", false, "Print version and exit")
-	renameContext := fs.String("rename-context", "", "Rename the first incoming context")
-	renameCluster := fs.String("rename-cluster", "", "Rename the first incoming cluster")
-	renameUser := fs.String("rename-user", "", "Rename the first incoming user")
-	kubeconfig := fs.String("kubeconfig", defaultKubeconfig, "Target kubeconfig to merge into (default: ~/.kube/config)")
-	dryRun := fs.Bool("dry-run", false, "Preview what would be merged without writing any changes")
+	renameContext := fs.String("rename-context", "", "Rename-on-import: rename the first incoming context")
+	renameCluster := fs.String("rename-cluster", "", "Rename-on-import: rename the first incoming cluster (also rewrites the context's cluster ref)")
+	renameUser := fs.String("rename-user", "", "Rename-on-import: rename the first incoming user (also rewrites the context's user ref)")
+	kubeconfig := fs.String("kubeconfig", defaultKubeconfig, "Target kubeconfig")
+	dryRun := fs.Bool("dry-run", false, "Preview changes without writing")
 	jsonOutput := fs.Bool("json", false, "Output results as JSON (auto-enabled when stdout is not a TTY)")
-	yes := fs.Bool("yes", false, "Skip confirmation prompts (also auto-skipped in non-TTY / piped contexts)")
-
-	fs.Usage = func() {
-		fmt.Fprintf(stderr, "Usage: konfuse <input.yaml> [flags]\n")
-		fmt.Fprintf(stderr, "       konfuse list [flags]\n")
-		fmt.Fprintf(stderr, "       konfuse delete <context-name> [flags]\n")
-		fmt.Fprintf(stderr, "       konfuse use <context-name> [flags]\n\n")
-		fmt.Fprintf(stderr, "Merge a new kubeconfig file into your existing kubeconfig.\n\n")
-		fmt.Fprintf(stderr, "Commands:\n")
-		fmt.Fprintf(stderr, "  list     List contexts, clusters, and users in the kubeconfig\n")
-		fmt.Fprintf(stderr, "  delete   Delete a context and its orphaned cluster/user\n")
-		fmt.Fprintf(stderr, "  use      Switch the active context (sets current-context)\n\n")
-		fmt.Fprintf(stderr, "Arguments:\n")
-		fmt.Fprintf(stderr, "  input    Path to the kubeconfig YAML file to merge\n\n")
-		fmt.Fprintf(stderr, "Flags:\n")
-		fs.PrintDefaults()
-		fmt.Fprintf(stderr, "\nExamples:\n")
-		fmt.Fprintf(stderr, "  konfuse new-cluster.yaml\n")
-		fmt.Fprintf(stderr, "  konfuse new-cluster.yaml --rename-context prod --rename-cluster eks-prod\n")
-		fmt.Fprintf(stderr, "  konfuse new-cluster.yaml --dry-run --json\n")
-		fmt.Fprintf(stderr, "  konfuse new-cluster.yaml --kubeconfig /path/to/config\n")
-		fmt.Fprintf(stderr, "  konfuse list\n")
-		fmt.Fprintf(stderr, "  konfuse delete my-context\n")
-		fmt.Fprintf(stderr, "  konfuse use my-context\n")
-	}
+	yes := fs.Bool("yes", false, "Skip the confirmation prompt before overwriting an existing kubeconfig")
+	fs.Usage = cmdUsage(fs, stderr,
+		"merge <input.yaml> [flags]",
+		"Merge a kubeconfig file into the target kubeconfig. Rename-on-import flags affect only the first incoming entry of each kind.",
+		[]string{"<input.yaml>    Path to the kubeconfig YAML file to merge (required)"},
+		[]string{
+			"konfuse merge new-cluster.yaml",
+			"konfuse merge new-cluster.yaml --rename-context prod --rename-cluster eks-prod",
+			"konfuse merge new-cluster.yaml --dry-run --json",
+			"konfuse new-cluster.yaml   # implicit form, equivalent to `konfuse merge`",
+		})
 
 	input, flagArgs := extractPositional(args)
 	if err := fs.Parse(flagArgs); err != nil {
 		return exitUsage
 	}
 
-	if *showVersion {
-		fmt.Fprintf(stdout, "konfuse %s\n", version)
-		return exitOK
-	}
-
 	useJSON := *jsonOutput || !isTTYStdoutFn()
 
 	if input == "" {
-		return fail(stderr, useJSON, "input file argument is required", "konfuse <path-to-kubeconfig.yaml>", exitUsage)
+		return fail(stderr, useJSON, "input file argument is required", "konfuse merge <path-to-kubeconfig.yaml>", exitUsage)
 	}
 
 	// Validate input file exists and is non-empty.
@@ -378,11 +414,12 @@ func runMergeE(args []string, defaultKubeconfig string, stdin io.Reader, stdout,
 func runListE(args []string, defaultKubeconfig string, stdin io.Reader, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("list", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	kubeconfig := fs.String("kubeconfig", defaultKubeconfig, "Path to kubeconfig")
+	kubeconfig := fs.String("kubeconfig", defaultKubeconfig, "Target kubeconfig")
 	jsonOutput := fs.Bool("json", false, "Output as JSON (auto-enabled when stdout is not a TTY)")
 	fs.Usage = cmdUsage(fs, stderr,
 		"list [flags]",
-		"List contexts, clusters, and users in the kubeconfig.",
+		"List contexts, clusters, and users in the kubeconfig. Read-only.",
+		nil,
 		[]string{
 			"konfuse list",
 			"konfuse list --json",
@@ -448,12 +485,13 @@ func runDeleteE(args []string, defaultKubeconfig string, stdin io.Reader, stdout
 
 	fs := flag.NewFlagSet("delete", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	kubeconfig := fs.String("kubeconfig", defaultKubeconfig, "Path to kubeconfig")
+	kubeconfig := fs.String("kubeconfig", defaultKubeconfig, "Target kubeconfig")
 	jsonOutput := fs.Bool("json", false, "Output as JSON (auto-enabled when stdout is not a TTY)")
-	yes := fs.Bool("yes", false, "Skip confirmation prompts (also auto-skipped in non-TTY / piped contexts)")
+	yes := fs.Bool("yes", false, "Skip the confirmation prompt")
 	fs.Usage = cmdUsage(fs, stderr,
 		"delete <context-name> [flags]",
 		"Delete a context from the kubeconfig and remove its cluster/user if no longer referenced.",
+		[]string{"<context-name>  Context to delete (required)"},
 		[]string{
 			"konfuse delete my-context",
 			"konfuse delete my-context --yes",
@@ -524,14 +562,12 @@ func runUseE(args []string, defaultKubeconfig string, stdin io.Reader, stdout, s
 
 	fs := flag.NewFlagSet("use", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	kubeconfig := fs.String("kubeconfig", defaultKubeconfig, "Path to kubeconfig")
+	kubeconfig := fs.String("kubeconfig", defaultKubeconfig, "Target kubeconfig")
 	jsonOutput := fs.Bool("json", false, "Output as JSON (auto-enabled when stdout is not a TTY)")
-	// --yes is accepted for scripting symmetry with merge/delete; use is non-
-	// destructive and never prompts, so the flag has no effect here.
-	_ = fs.Bool("yes", false, "Accepted for symmetry with merge/delete; use never prompts")
 	fs.Usage = cmdUsage(fs, stderr,
 		"use <context-name> [flags]",
-		"Switch the active context (sets current-context). No-op when already on the requested context.",
+		"Switch the active context (sets current-context). No-op (no backup, no write) when already on the requested context.",
+		[]string{"<context-name>  Context to switch to (required)"},
 		[]string{
 			"konfuse use prod",
 			"konfuse use prod --kubeconfig /path/to/config",

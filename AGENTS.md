@@ -28,7 +28,8 @@ go test ./internal/merger/ -run TestRenameUser
 go vet ./...
 
 # Run the tool
-go run . new-cluster.yaml --rename-context prod --rename-cluster eks-prod
+go run . merge new-cluster.yaml --rename-context prod --rename-cluster eks-prod
+go run . new-cluster.yaml   # equivalent shortcut
 go run . list --json
 go run . use prod
 go run . delete old-staging --yes
@@ -49,18 +50,25 @@ internal/merger/
 
 | Command | Purpose | Notes |
 |---|---|---|
-| `konfuse <file>` (default) | Merge `<file>` into the target kubeconfig | Prompts before overwriting; skip with `--yes` / `--json` / non-TTY |
+| `konfuse merge <file>` | Merge `<file>` into the target kubeconfig | Prompts before overwriting; skip with `--yes` / `--json` / non-TTY. `konfuse <file>` is an equivalent shortcut. |
 | `konfuse list` | List contexts, clusters, users | Read-only |
 | `konfuse use <ctx>` | Switch the active context | No-op (no backup, no write) when already on `<ctx>` |
 | `konfuse delete <ctx>` | Delete a context and any orphaned cluster/user | Prompts before writing; skip with `--yes` / `--json` / non-TTY |
 
-## Key flags
+## Top-level flags
+
+| Flag | Behaviour |
+|---|---|
+| `--version` | Print version and exit. Works at any position (handled before subcommand dispatch). |
+| `-h`, `--help` | Show top-level help. Subcommand-specific help via `konfuse <command> -h`. |
+
+## Key per-subcommand flags
 
 | Flag | Behaviour |
 |---|---|
 | `--dry-run` | (merge) Compute and show changes without writing |
 | `--json` | Structured JSON output (auto-enabled when stdout is not a TTY); also auto-skips confirmation prompts |
-| `--yes` | Skip confirmation prompts. Honored on merge and delete; accepted (no-op) on use for scripting symmetry |
+| `--yes` | Skip confirmation prompts. Honored on merge and delete only |
 | `--kubeconfig PATH` | Target kubeconfig (default: `~/.kube/config`) |
 | `--rename-context` | (merge) Rename the first incoming context |
 | `--rename-cluster` | (merge) Rename the first incoming cluster (also updates context's cluster ref) |

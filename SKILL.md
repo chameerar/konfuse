@@ -20,22 +20,25 @@ Merge any kubeconfig file into your existing `~/.kube/config`, switch the active
 
 ```bash
 # Preview what will change (always do this first)
-konfuse <file> --dry-run
+konfuse merge <file> --dry-run
 
 # Basic merge (asks for confirmation when overwriting an existing kubeconfig)
+konfuse merge <file>
+
+# Shortcut: a bare file argument also dispatches to merge
 konfuse <file>
 
 # Rename context and cluster on import (recommended)
-konfuse <file> --rename-context <name> --rename-cluster <name>
+konfuse merge <file> --rename-context <name> --rename-cluster <name>
 
 # Rename all three (context, cluster, user)
-konfuse <file> --rename-context <name> --rename-cluster <name> --rename-user <name>
+konfuse merge <file> --rename-context <name> --rename-cluster <name> --rename-user <name>
 
 # Non-interactive / CI mode with JSON output
-konfuse <file> --yes --json
+konfuse merge <file> --yes --json
 
 # Target a different kubeconfig
-konfuse <file> --kubeconfig /path/to/config
+konfuse merge <file> --kubeconfig /path/to/config
 ```
 
 ## List, switch, delete
@@ -52,6 +55,11 @@ konfuse use prod
 konfuse delete old-staging         # prompts for confirmation
 konfuse delete old-staging --yes   # skip the prompt
 ```
+
+## Top-level
+
+- `konfuse --help` lists every command. `konfuse <command> -h` shows command-specific help.
+- `konfuse --version` prints the version. Works at any position (e.g. `konfuse list --version` also prints the version).
 
 ## Rules
 

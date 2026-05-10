@@ -11,12 +11,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `konfuse use <context-name>` — switch the active context (sets `current-context`); supports `--kubeconfig` and `--json`
 - Backup is written only when `use` actually changes the current context (no-op switches leave the file untouched)
 - Confirmation prompt before destructive writes on `merge` (when target exists) and `delete`. Auto-skipped in non-TTY contexts (pipes / CI), with `--json`, or with `--yes`. The `--yes` flag is now wired (previously declared but ignored).
-- `--yes` is accepted on `use` for scripting symmetry, though `use` never prompts.
+- Explicit `konfuse merge <file>` subcommand. `konfuse <file>` continues to work as a backward-compat shortcut.
+- `konfuse --version` and `konfuse <command> -h` now work at any position. `konfuse list --version` (etc.) prints the version; previously only `konfuse --version` did.
+- Subcommand `-h` output now lists required positional arguments under an "Arguments:" section and documents `-h, --help` explicitly.
 
 ### Changed
 - `delete` and `use` JSON output now include a `target` field and emit `backup: null` when no backup was created (previously the `backup` key was omitted via `omitempty`).
 - `list` human output uses `current_context:` (underscore) to match the JSON field. Scripts grepping for `current-context:` should switch to `--json`.
 - Error messages are now lowercase (matching Go convention) and prose hints have been removed; remaining hints are runnable `konfuse ...` commands.
+- `--kubeconfig` help text is now consistent across all subcommands (`Target kubeconfig`); the auto-rendered default path is no longer duplicated in the description.
+
+### Removed
+- `--yes` is no longer accepted on `konfuse use`. It was a no-op (use never prompted) and offered surface area without behavior. `--yes` remains valid on `merge` and `delete`.
 
 ### Fixed
 - `konfuse delete <context-name> --kubeconfig PATH` now respects flags placed after the positional argument (previously the flag was silently ignored)

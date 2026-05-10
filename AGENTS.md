@@ -4,7 +4,7 @@ This file provides guidance to AI coding agents (OpenAI Codex, etc.) when workin
 
 ## Overview
 
-`konfuse` is a Go CLI tool that merges Kubernetes kubeconfig files with rename-on-import and auto-backup. Single binary, no runtime dependencies.
+`konfuse` is a Go CLI tool for kubeconfig management: merging files (with rename-on-import and auto-backup), listing entries, switching the active context, and deleting contexts cleanly. Single binary, no runtime dependencies. Requires Go 1.22+ to build.
 
 ## Development Setup
 
@@ -28,7 +28,11 @@ go test ./internal/merger/ -run TestRenameUser
 go vet ./...
 
 # Run the tool
-go run . new-cluster.yaml --rename-context prod --rename-cluster eks-prod
+go run . merge new-cluster.yaml --rename-context prod --rename-cluster eks-prod
+go run . new-cluster.yaml   # equivalent shortcut
+go run . list --json
+go run . use prod
+go run . delete old-staging --yes
 ```
 
 ## Architecture
@@ -40,24 +44,41 @@ internal/merger/
   merger_test.go          # Go tests
 ```
 
-**`internal/merger.MergeKubeconfig`** is a pure function — all tests call it directly without any mocking.
+**`internal/merger`** is pure — all tests call its functions directly without mocking. CLI integration tests live in `main_test.go` and exercise the `runXE` entry points with in-memory readers/writers.
 
-## Key flags
+## Subcommands
+
+| Command | Purpose | Notes |
+|---|---|---|
+| `konfuse merge <file>` | Merge `<file>` into the target kubeconfig | Prompts before overwriting; skip with `--yes` / `--json` / non-TTY. `konfuse <file>` is an equivalent shortcut. |
+| `konfuse list` | List contexts, clusters, users | Read-only |
+| `konfuse use <ctx>` | Switch the active context | No-op (no backup, no write) when already on `<ctx>` |
+| `konfuse delete <ctx>` | Delete a context and any orphaned cluster/user | Prompts before writing; skip with `--yes` / `--json` / non-TTY |
+
+## Top-level flags
 
 | Flag | Behaviour |
 |---|---|
-| `--dry-run` | Compute and show changes without writing |
-| `--json` | Structured JSON output (auto-enabled when stdout is not a TTY) |
-| `--yes` | Skip prompts (non-interactive / CI mode) |
-| `--rename-context` | Rename the first incoming context |
-| `--rename-cluster` | Rename the first incoming cluster (also updates context's cluster ref) |
-| `--rename-user` | Rename the first incoming user (also updates context's user ref) |
+| `--version` | Print version and exit. Works at any position (handled before subcommand dispatch). |
+| `-h`, `--help` | Show top-level help. Subcommand-specific help via `konfuse <command> -h`. |
+
+## Key per-subcommand flags
+
+| Flag | Behaviour |
+|---|---|
+| `--dry-run` | (merge) Compute and show changes without writing |
+| `--json` | Structured JSON output (auto-enabled when stdout is not a TTY); also auto-skips confirmation prompts |
+| `--yes` | Skip confirmation prompts. Honored on merge and delete only |
+| `--kubeconfig PATH` | Target kubeconfig (default: `~/.kube/config`) |
+| `--rename-context` | (merge) Rename the first incoming context |
+| `--rename-cluster` | (merge) Rename the first incoming cluster (also updates context's cluster ref) |
+| `--rename-user` | (merge) Rename the first incoming user (also updates context's user ref) |
 
 ## Exit codes
 
 | Code | Meaning |
 |---|---|
 | 0 | Success |
-| 1 | General error |
-| 2 | Usage / argument error |
-| 3 | Input file not found |
+| 1 | General error (load / parse / write failure) |
+| 2 | Usage error or user-aborted prompt |
+| 3 | Input file or kubeconfig not found |

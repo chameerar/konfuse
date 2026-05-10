@@ -652,7 +652,9 @@ current-context: ""
 		}
 	})
 
-	t.Run("version_flag_short_circuits", func(t *testing.T) {
+	t.Run("version_flag_no_longer_handled_by_merge", func(t *testing.T) {
+		// --version is now a top-level flag handled by main(); runMergeE
+		// rejects it as an unknown flag.
 		var stdout, stderr bytes.Buffer
 		code := runMergeE(
 			[]string{"--version"},
@@ -660,11 +662,8 @@ current-context: ""
 			strings.NewReader(""),
 			&stdout, &stderr,
 		)
-		if code != exitOK {
-			t.Errorf("exit = %d, want %d", code, exitOK)
-		}
-		if !strings.HasPrefix(stdout.String(), "konfuse ") {
-			t.Errorf("stdout = %q, want konfuse <version>", stdout.String())
+		if code != exitUsage {
+			t.Errorf("exit = %d, want %d", code, exitUsage)
 		}
 	})
 
@@ -1229,7 +1228,8 @@ current-context: ctx1
 		}
 	})
 
-	t.Run("yes_flag_accepted_for_symmetry", func(t *testing.T) {
+	t.Run("yes_flag_rejected", func(t *testing.T) {
+		// --yes was removed from use; it's now an unknown flag.
 		path := writeTempFile(t, yamlBody)
 		var stdout, stderr bytes.Buffer
 		code := runUseE(
@@ -1238,8 +1238,8 @@ current-context: ctx1
 			strings.NewReader(""),
 			&stdout, &stderr,
 		)
-		if code != exitOK {
-			t.Errorf("exit = %d, stderr: %s", code, stderr.String())
+		if code != exitUsage {
+			t.Errorf("exit = %d, want %d", code, exitUsage)
 		}
 	})
 

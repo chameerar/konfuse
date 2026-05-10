@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-`konfuse` is a Go CLI tool that merges Kubernetes kubeconfig files with rename-on-import and auto-backup. Single binary, no runtime dependencies.
+`konfuse` is a Go CLI for kubeconfig management: merging files (with rename-on-import and auto-backup), listing entries, switching the active context, and deleting contexts cleanly. Single binary, no runtime dependencies. Requires Go 1.22+ to build.
 
 ## Development Setup
 
@@ -31,7 +31,11 @@ go test -v ./...
 go vet ./...
 
 # Run the tool
-go run . new-cluster.yaml --rename-context prod --rename-cluster eks-prod
+go run . merge new-cluster.yaml --rename-context prod --rename-cluster eks-prod
+go run . new-cluster.yaml   # equivalent shortcut
+go run . list --json
+go run . use prod
+go run . delete old-staging --yes
 ```
 
 ## Architecture
@@ -43,10 +47,11 @@ internal/merger/
   merger_test.go          # Go tests
 ```
 
-**`main.go`** handles all I/O: loading/saving YAML, creating backups, formatting human/JSON output, exit codes.
+**`main.go`** handles all I/O: subcommand dispatch, flag parsing, loading/saving YAML, creating backups, formatting human/JSON output, confirmation prompts, exit codes. Each subcommand is split into a thin `runX(...)` wrapper that calls `runXE(args, kubeconfig, stdin, stdout, stderr) int` so CLI behavior is unit-testable end-to-end.
 
 **`internal/merger`** is pure logic (no I/O):
 - `MergeKubeconfig(existing, incoming, renameContext, renameCluster, renameUser)` — merges two configs, renames first entries only, updates cross-references, returns `(*KubeConfig, MergeResult)`
+- `ListEntries(cfg)` / `DeleteContext(cfg, name)` / `UseContext(cfg, name)` — readers and modifiers used by the corresponding subcommands
 - `BackupConfig(path)` — creates a timestamped `.backup.<timestamp>` copy
 - `KubeConfig` / `NamedEntry` — YAML-tagged structs; `NamedEntry.Body` uses `yaml:",inline"` to preserve unknown fields
 
@@ -55,9 +60,12 @@ internal/merger/
 - Only the **first** cluster/context/user in the incoming file is renamed; others pass through unchanged
 - When `--rename-cluster` is set, the cluster reference inside the first context is also updated
 - When `--rename-user` is set, the user reference inside the first context is also updated
-- `konfuse use <context>` switches `current-context`; backup is only written when the value actually changes
+- `konfuse use <context>` switches `current-context`; backup is only written when the value actually changes (no-op switches leave the file untouched)
+- `merge` (over an existing file) and `delete` prompt for confirmation in interactive shells. `--yes`, `--json`, and non-TTY stdin all auto-skip the prompt. `use` never prompts and does not accept `--yes`.
+- `merge` is an explicit subcommand (`konfuse merge <file>`); `konfuse <file>` is a backward-compat shortcut handled by the same code path.
+- `--version` and `-h`/`--help` are top-level concerns handled in `main()` before subcommand dispatch, so they work regardless of where they appear in argv.
 - `--json` is auto-enabled when stdout is not a TTY (pipes, CI)
-- Exit codes: 0 ok, 1 error, 2 usage error, 3 file not found
+- Exit codes: 0 ok, 1 error (load/parse/write), 2 usage error or user-aborted prompt, 3 file not found
 
 ## CI
 

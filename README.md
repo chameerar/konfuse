@@ -11,6 +11,8 @@ Got a new cluster config from your ops team? Spinning up another EKS environment
 
 ## Why konfuse?
 
+> Comparison covers the merge feature. See [Managing contexts](#managing-contexts) for the `list` / `use` / `delete` subcommands.
+
 | Feature | konfuse | kubecm | kubectx | konfig |
 |---|:---:|:---:|:---:|:---:|
 | Merge kubeconfigs | ✓ | ✓ | ✗ | ✓ |
@@ -21,7 +23,6 @@ Got a new cluster config from your ops team? Spinning up another EKS environment
 | --dry-run / preview | ✓ | ✗ | ✗ | ✗ |
 | --json structured output | ✓ | ✗ | ✗ | ✗ |
 | Single binary, no runtime deps | ✓ | ✓ | ✓ | ✗ |
-| kubectl plugin (Krew) | soon | ✓ | ✓ | ✓ |
 
 ## Installation
 
@@ -55,6 +56,8 @@ export PATH="$HOME/.local/bin:$PATH"
 
 ### Build from source
 
+Requires Go 1.22 or newer.
+
 ```bash
 go install github.com/chameerar/konfuse@latest
 ```
@@ -77,22 +80,27 @@ rm $(go env GOPATH)/bin/konfuse
 
 ```bash
 # Preview what will change (no writes)
-konfuse new-cluster.yaml --dry-run
+konfuse merge new-cluster.yaml --dry-run
 
 # Merge into ~/.kube/config
+konfuse merge new-cluster.yaml
+
+# Shortcut: passing a file as the first argument is equivalent to `konfuse merge`
 konfuse new-cluster.yaml
 
 # Rename context, cluster, and user on import
-konfuse new-cluster.yaml --rename-context prod --rename-cluster eks-prod --rename-user eks-admin
+konfuse merge new-cluster.yaml --rename-context prod --rename-cluster eks-prod --rename-user eks-admin
 
 # Machine-readable output (also auto-enabled in pipes/CI)
-konfuse new-cluster.yaml --json
+konfuse merge new-cluster.yaml --json
 
 # Target a different kubeconfig
-konfuse new-cluster.yaml --kubeconfig ~/.kube/work-config
+konfuse merge new-cluster.yaml --kubeconfig ~/.kube/work-config
 ```
 
-### Options
+Run `konfuse --help` for the full command list, or `konfuse <command> -h` for command-specific help. `konfuse --version` prints the version (works after any subcommand too).
+
+### Merge options
 
 | Option | Description |
 |---|---|
@@ -102,7 +110,7 @@ konfuse new-cluster.yaml --kubeconfig ~/.kube/work-config
 | `--rename-user NAME` | Rename the first incoming user |
 | `--dry-run` | Preview changes without writing anything |
 | `--json` | Output results as JSON (auto-enabled when stdout is not a TTY) |
-| `--yes` | Non-interactive mode — skip all prompts |
+| `--yes` | Skip the confirmation prompt before overwriting an existing kubeconfig |
 | `--kubeconfig PATH` | Target kubeconfig (default: `~/.kube/config`) |
 
 ## Managing contexts
@@ -118,14 +126,57 @@ konfuse use prod
 konfuse delete old-staging
 ```
 
-`use` and `delete` create a timestamped backup before writing. `use` is a no-op (no backup, no write) when you're already on the requested context. All three subcommands accept `--kubeconfig PATH` and `--json`.
+`delete` always creates a timestamped backup before writing and prompts for confirmation in interactive shells. `use` only creates a backup (and only writes) when the active context actually changes; no-op switches leave the file untouched. `list` is read-only.
+
+### List options
+
+| Option | Description |
+|---|---|
+| `--kubeconfig PATH` | Target kubeconfig (default: `~/.kube/config`) |
+| `--json` | Output as JSON (auto-enabled when stdout is not a TTY) |
+
+### Delete options
+
+| Option | Description |
+|---|---|
+| `<context-name>` (positional) | Context to delete |
+| `--kubeconfig PATH` | Target kubeconfig (default: `~/.kube/config`) |
+| `--json` | Output as JSON (auto-enabled when stdout is not a TTY) |
+| `--yes` | Skip the confirmation prompt |
+
+### Use options
+
+| Option | Description |
+|---|---|
+| `<context-name>` (positional) | Context to switch to |
+| `--kubeconfig PATH` | Target kubeconfig (default: `~/.kube/config`) |
+| `--json` | Output as JSON (auto-enabled when stdout is not a TTY) |
+
+## Confirmation prompts
+
+`merge` (when overwriting an existing kubeconfig) and `delete` ask for confirmation before writing. The prompt is auto-skipped when:
+
+- `--yes` is set,
+- `--json` is set, or
+- stdin is not a TTY (pipes, CI).
+
+Aborting at the prompt (any input other than `y` / `yes`) exits with code 2 and writes nothing.
+
+## Exit codes
+
+| Code | Meaning |
+|---|---|
+| 0 | Success |
+| 1 | General error (load / parse / write failure) |
+| 2 | Usage error or user-aborted prompt |
+| 3 | Input file or kubeconfig not found |
 
 ## Example: EKS config with a friendly name
 
 You receive `eks-staging.yaml` with context named `arn:aws:eks:us-east-1:123456789:cluster/staging`. Run:
 
 ```bash
-konfuse eks-staging.yaml --rename-context staging --rename-cluster eks-staging
+konfuse merge eks-staging.yaml --rename-context staging --rename-cluster eks-staging
 ```
 
 **Before:**

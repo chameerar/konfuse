@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -170,28 +171,28 @@ func writeWithBackup(path string, cfg *merger.KubeConfig) (backupPath string, er
 // cmdUsage builds a flag.Usage closure for a subcommand. The args slice is
 // rendered as an "Arguments:" section before the flags so required positionals
 // are visible in -h output.
-func cmdUsage(fs *flag.FlagSet, errw io.Writer, synopsis, description string, args, examples []string) func() {
+func cmdUsage(fs *flag.FlagSet, synopsis, description string, args, examples []string) func() {
 	return func() {
-		fmt.Fprintf(errw, "Usage: konfuse %s\n\n", synopsis)
+		out := fs.Output()
+		fmt.Fprintf(out, "Usage: konfuse %s\n\n", synopsis)
 		if description != "" {
-			fmt.Fprintf(errw, "%s\n\n", description)
+			fmt.Fprintf(out, "%s\n\n", description)
 		}
 		if len(args) > 0 {
-			fmt.Fprintln(errw, "Arguments:")
+			fmt.Fprintln(out, "Arguments:")
 			for _, a := range args {
-				fmt.Fprintf(errw, "  %s\n", a)
+				fmt.Fprintf(out, "  %s\n", a)
 			}
-			fmt.Fprintln(errw)
+			fmt.Fprintln(out)
 		}
-		fmt.Fprintln(errw, "Flags:")
-		fs.SetOutput(errw)
+		fmt.Fprintln(out, "Flags:")
 		fs.PrintDefaults()
-		fmt.Fprintln(errw, "  -h, --help")
-		fmt.Fprintln(errw, "    \tShow this help and exit")
+		fmt.Fprintln(out, "  -h, --help")
+		fmt.Fprintln(out, "    \tShow this help and exit")
 		if len(examples) > 0 {
-			fmt.Fprintln(errw, "\nExamples:")
+			fmt.Fprintln(out, "\nExamples:")
 			for _, ex := range examples {
-				fmt.Fprintf(errw, "  %s\n", ex)
+				fmt.Fprintf(out, "  %s\n", ex)
 			}
 		}
 	}
@@ -200,7 +201,6 @@ func cmdUsage(fs *flag.FlagSet, errw io.Writer, synopsis, description string, ar
 // printTopLevelUsage is shown by `konfuse --help` (no subcommand).
 func printTopLevelUsage(errw io.Writer) {
 	fmt.Fprintln(errw, "Usage: konfuse <command> [flags]")
-	fmt.Fprintln(errw, "       konfuse <input.yaml> [flags]   (shortcut for `konfuse merge <input.yaml>`)")
 	fmt.Fprintln(errw)
 	fmt.Fprintln(errw, "Manage Kubernetes kubeconfig files: merge, list, switch context, delete context.")
 	fmt.Fprintln(errw)
@@ -242,23 +242,34 @@ func main() {
 		os.Exit(exitOK)
 	}
 
-	if len(os.Args) > 1 {
-		switch os.Args[1] {
-		case "--help", "-help", "-h":
-			printTopLevelUsage(os.Stderr)
-			os.Exit(exitOK)
-		case "merge":
-			os.Exit(runMergeE(os.Args[2:], defaultKubeconfig, os.Stdin, os.Stdout, os.Stderr))
-		case "list":
-			os.Exit(runListE(os.Args[2:], defaultKubeconfig, os.Stdin, os.Stdout, os.Stderr))
-		case "delete":
-			os.Exit(runDeleteE(os.Args[2:], defaultKubeconfig, os.Stdin, os.Stdout, os.Stderr))
-		case "use":
-			os.Exit(runUseE(os.Args[2:], defaultKubeconfig, os.Stdin, os.Stdout, os.Stderr))
-		}
+	if len(os.Args) <= 1 {
+		printTopLevelUsage(os.Stderr)
+		os.Exit(exitUsage)
 	}
 
-	os.Exit(runMergeE(os.Args[1:], defaultKubeconfig, os.Stdin, os.Stdout, os.Stderr))
+	switch os.Args[1] {
+	case "--help", "-help", "-h":
+		printTopLevelUsage(os.Stderr)
+		os.Exit(exitOK)
+	case "merge":
+		os.Exit(runMergeE(os.Args[2:], defaultKubeconfig, os.Stdin, os.Stdout, os.Stderr))
+	case "list":
+		os.Exit(runListE(os.Args[2:], defaultKubeconfig, os.Stdin, os.Stdout, os.Stderr))
+	case "delete":
+		os.Exit(runDeleteE(os.Args[2:], defaultKubeconfig, os.Stdin, os.Stdout, os.Stderr))
+	case "use":
+		os.Exit(runUseE(os.Args[2:], defaultKubeconfig, os.Stdin, os.Stdout, os.Stderr))
+	default:
+		// Merging requires the explicit `merge` subcommand — there is no
+		// bare-file shortcut. When the argument looks like a path rather than
+		// a flag, point the user at the merge command.
+		arg := os.Args[1]
+		hint := "konfuse --help"
+		if !strings.HasPrefix(arg, "-") {
+			hint = fmt.Sprintf("konfuse merge %s", arg)
+		}
+		os.Exit(fail(os.Stderr, !isTTYStdoutFn(), fmt.Sprintf("unknown command: %s", arg), hint, exitUsage))
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -275,7 +286,7 @@ func runMergeE(args []string, defaultKubeconfig string, stdin io.Reader, stdout,
 	dryRun := fs.Bool("dry-run", false, "Preview changes without writing")
 	jsonOutput := fs.Bool("json", false, "Output results as JSON (auto-enabled when stdout is not a TTY)")
 	yes := fs.Bool("yes", false, "Skip the confirmation prompt before overwriting an existing kubeconfig")
-	fs.Usage = cmdUsage(fs, stderr,
+	fs.Usage = cmdUsage(fs,
 		"merge <input.yaml> [flags]",
 		"Merge a kubeconfig file into the target kubeconfig. Rename-on-import flags affect only the first incoming entry of each kind.",
 		[]string{"<input.yaml>    Path to the kubeconfig YAML file to merge (required)"},
@@ -283,26 +294,31 @@ func runMergeE(args []string, defaultKubeconfig string, stdin io.Reader, stdout,
 			"konfuse merge new-cluster.yaml",
 			"konfuse merge new-cluster.yaml --rename-context prod --rename-cluster eks-prod",
 			"konfuse merge new-cluster.yaml --dry-run --json",
-			"konfuse new-cluster.yaml   # implicit form, equivalent to `konfuse merge`",
 		})
 
-	input, flagArgs := extractPositional(args)
-	if err := fs.Parse(flagArgs); err != nil {
-		return exitUsage
+	positionals, flagArgs := extractPositional(args)
+	if code, ok := parseSubcommandFlags(fs, stderr, flagArgs); !ok {
+		return code
 	}
 
 	useJSON := *jsonOutput || !isTTYStdoutFn()
 
-	if input == "" {
+	switch {
+	case len(positionals) == 0:
 		return fail(stderr, useJSON, "input file argument is required", "konfuse merge <path-to-kubeconfig.yaml>", exitUsage)
+	case len(positionals) > 1:
+		return fail(stderr, useJSON,
+			fmt.Sprintf("unexpected extra argument(s): %s", strings.Join(positionals[1:], " ")),
+			"konfuse merge <input.yaml> [flags]", exitUsage)
 	}
+	input := positionals[0]
 
 	// Validate input file exists and is non-empty.
 	fi, statErr := os.Stat(input)
 	if os.IsNotExist(statErr) {
 		return fail(stderr, useJSON,
 			fmt.Sprintf("input file not found: %s", input),
-			"konfuse <path-to-kubeconfig.yaml>",
+			"konfuse merge <path-to-kubeconfig.yaml>",
 			exitNotFound,
 		)
 	}
@@ -416,7 +432,7 @@ func runListE(args []string, defaultKubeconfig string, stdin io.Reader, stdout, 
 	fs.SetOutput(stderr)
 	kubeconfig := fs.String("kubeconfig", defaultKubeconfig, "Target kubeconfig")
 	jsonOutput := fs.Bool("json", false, "Output as JSON (auto-enabled when stdout is not a TTY)")
-	fs.Usage = cmdUsage(fs, stderr,
+	fs.Usage = cmdUsage(fs,
 		"list [flags]",
 		"List contexts, clusters, and users in the kubeconfig. Read-only.",
 		nil,
@@ -425,11 +441,19 @@ func runListE(args []string, defaultKubeconfig string, stdin io.Reader, stdout, 
 			"konfuse list --json",
 			"konfuse list --kubeconfig /path/to/config",
 		})
-	if err := fs.Parse(args); err != nil {
-		return exitUsage
+
+	positionals, flagArgs := extractPositional(args)
+	if code, ok := parseSubcommandFlags(fs, stderr, flagArgs); !ok {
+		return code
 	}
 
 	useJSON := *jsonOutput || !isTTYStdoutFn()
+
+	if len(positionals) > 0 {
+		return fail(stderr, useJSON,
+			fmt.Sprintf("unexpected argument(s): %s", strings.Join(positionals, " ")),
+			"konfuse list", exitUsage)
+	}
 
 	if _, err := os.Stat(*kubeconfig); os.IsNotExist(err) {
 		return fail(stderr, useJSON, fmt.Sprintf("kubeconfig not found: %s", *kubeconfig), "", exitNotFound)
@@ -481,14 +505,12 @@ func runListE(args []string, defaultKubeconfig string, stdin io.Reader, stdout, 
 }
 
 func runDeleteE(args []string, defaultKubeconfig string, stdin io.Reader, stdout, stderr io.Writer) int {
-	contextName, flagArgs := extractPositional(args)
-
 	fs := flag.NewFlagSet("delete", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	kubeconfig := fs.String("kubeconfig", defaultKubeconfig, "Target kubeconfig")
 	jsonOutput := fs.Bool("json", false, "Output as JSON (auto-enabled when stdout is not a TTY)")
 	yes := fs.Bool("yes", false, "Skip the confirmation prompt")
-	fs.Usage = cmdUsage(fs, stderr,
+	fs.Usage = cmdUsage(fs,
 		"delete <context-name> [flags]",
 		"Delete a context from the kubeconfig and remove its cluster/user if no longer referenced.",
 		[]string{"<context-name>  Context to delete (required)"},
@@ -497,15 +519,23 @@ func runDeleteE(args []string, defaultKubeconfig string, stdin io.Reader, stdout
 			"konfuse delete my-context --yes",
 			"konfuse delete my-context --kubeconfig /path/to/config --json",
 		})
-	if err := fs.Parse(flagArgs); err != nil {
-		return exitUsage
+
+	positionals, flagArgs := extractPositional(args)
+	if code, ok := parseSubcommandFlags(fs, stderr, flagArgs); !ok {
+		return code
 	}
 
 	useJSON := *jsonOutput || !isTTYStdoutFn()
 
-	if contextName == "" {
+	switch {
+	case len(positionals) == 0:
 		return fail(stderr, useJSON, "context name is required", "konfuse delete <context-name>", exitUsage)
+	case len(positionals) > 1:
+		return fail(stderr, useJSON,
+			fmt.Sprintf("unexpected extra argument(s): %s", strings.Join(positionals[1:], " ")),
+			"konfuse delete <context-name> [flags]", exitUsage)
 	}
+	contextName := positionals[0]
 
 	if _, err := os.Stat(*kubeconfig); os.IsNotExist(err) {
 		return fail(stderr, useJSON, fmt.Sprintf("kubeconfig not found: %s", *kubeconfig), "", exitNotFound)
@@ -558,13 +588,11 @@ func runDeleteE(args []string, defaultKubeconfig string, stdin io.Reader, stdout
 }
 
 func runUseE(args []string, defaultKubeconfig string, stdin io.Reader, stdout, stderr io.Writer) int {
-	contextName, flagArgs := extractPositional(args)
-
 	fs := flag.NewFlagSet("use", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	kubeconfig := fs.String("kubeconfig", defaultKubeconfig, "Target kubeconfig")
 	jsonOutput := fs.Bool("json", false, "Output as JSON (auto-enabled when stdout is not a TTY)")
-	fs.Usage = cmdUsage(fs, stderr,
+	fs.Usage = cmdUsage(fs,
 		"use <context-name> [flags]",
 		"Switch the active context (sets current-context). No-op (no backup, no write) when already on the requested context.",
 		[]string{"<context-name>  Context to switch to (required)"},
@@ -573,15 +601,23 @@ func runUseE(args []string, defaultKubeconfig string, stdin io.Reader, stdout, s
 			"konfuse use prod --kubeconfig /path/to/config",
 			"konfuse use prod --json",
 		})
-	if err := fs.Parse(flagArgs); err != nil {
-		return exitUsage
+
+	positionals, flagArgs := extractPositional(args)
+	if code, ok := parseSubcommandFlags(fs, stderr, flagArgs); !ok {
+		return code
 	}
 
 	useJSON := *jsonOutput || !isTTYStdoutFn()
 
-	if contextName == "" {
+	switch {
+	case len(positionals) == 0:
 		return fail(stderr, useJSON, "context name is required", "konfuse use <context-name>", exitUsage)
+	case len(positionals) > 1:
+		return fail(stderr, useJSON,
+			fmt.Sprintf("unexpected extra argument(s): %s", strings.Join(positionals[1:], " ")),
+			"konfuse use <context-name> [flags]", exitUsage)
 	}
+	contextName := positionals[0]
 
 	if _, err := os.Stat(*kubeconfig); os.IsNotExist(err) {
 		return fail(stderr, useJSON, fmt.Sprintf("kubeconfig not found: %s", *kubeconfig), "", exitNotFound)
@@ -634,10 +670,12 @@ func runUseE(args []string, defaultKubeconfig string, stdin io.Reader, stdout, s
 	return exitOK
 }
 
-// extractPositional separates the first non-flag argument (the positional input
-// file) from the flag arguments so that Go's flag package can parse them
-// correctly even when flags appear after the positional arg.
-func extractPositional(args []string) (positional string, flagArgs []string) {
+// extractPositional separates positional (non-flag) arguments from flag
+// arguments so that Go's flag package parses correctly even when flags appear
+// after a positional. All positionals are returned in order; callers decide
+// how many are allowed and reject the rest (so a stray argument can never
+// silently swallow a following flag such as --kubeconfig).
+func extractPositional(args []string) (positionals []string, flagArgs []string) {
 	// Flags that consume the following argument as their value.
 	valueTakers := map[string]bool{
 		"rename-context": true,
@@ -655,16 +693,35 @@ func extractPositional(args []string) (positional string, flagArgs []string) {
 		if strings.HasPrefix(arg, "-") {
 			flagArgs = append(flagArgs, arg)
 			name := strings.TrimLeft(arg, "-")
-			if idx := strings.Index(name, "="); idx < 0 && valueTakers[name] {
+			if !strings.Contains(name, "=") && valueTakers[name] {
 				skipNext = true
 			}
-		} else if positional == "" {
-			positional = arg
 		} else {
-			flagArgs = append(flagArgs, arg) // unexpected extra positional
+			positionals = append(positionals, arg)
 		}
 	}
 	return
+}
+
+// parseSubcommandFlags parses flagArgs and formats failures in konfuse's own
+// style instead of the flag package's raw "flag provided but not defined"
+// output. It returns (code, ok): when ok is false the caller returns code
+// immediately — exitOK when -h/--help was requested (help is printed to
+// stderr), or exitUsage for a genuine flag error.
+func parseSubcommandFlags(fs *flag.FlagSet, stderr io.Writer, flagArgs []string) (int, bool) {
+	// Suppress the flag package's automatic error/usage output so we control
+	// formatting; restore stderr before printing anything ourselves.
+	fs.SetOutput(io.Discard)
+	err := fs.Parse(flagArgs)
+	fs.SetOutput(stderr)
+	if err == nil {
+		return exitOK, true
+	}
+	if errors.Is(err, flag.ErrHelp) {
+		fs.Usage()
+		return exitOK, false
+	}
+	return fail(stderr, !isTTYStdoutFn(), err.Error(), fmt.Sprintf("konfuse %s -h", fs.Name()), exitUsage), false
 }
 
 func printChanges(out io.Writer, result merger.MergeResult, dryRun bool) {

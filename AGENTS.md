@@ -29,7 +29,6 @@ go vet ./...
 
 # Run the tool
 go run . merge new-cluster.yaml --rename-context prod --rename-cluster eks-prod
-go run . new-cluster.yaml   # equivalent shortcut
 go run . list --json
 go run . use prod
 go run . delete old-staging --yes
@@ -50,7 +49,7 @@ internal/merger/
 
 | Command | Purpose | Notes |
 |---|---|---|
-| `konfuse merge <file>` | Merge `<file>` into the target kubeconfig | Prompts before overwriting; skip with `--yes` / `--json` / non-TTY. `konfuse <file>` is an equivalent shortcut. |
+| `konfuse merge <file>` | Merge `<file>` into the target kubeconfig | Prompts before overwriting; skip with `--yes` / `--json` / non-TTY. The `merge` subcommand is required — there is no bare-file shortcut. |
 | `konfuse list` | List contexts, clusters, users | Read-only |
 | `konfuse use <ctx>` | Switch the active context | No-op (no backup, no write) when already on `<ctx>` |
 | `konfuse delete <ctx>` | Delete a context and any orphaned cluster/user | Prompts before writing; skip with `--yes` / `--json` / non-TTY |

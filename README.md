@@ -85,9 +85,6 @@ konfuse merge new-cluster.yaml --dry-run
 # Merge into ~/.kube/config
 konfuse merge new-cluster.yaml
 
-# Shortcut: passing a file as the first argument is equivalent to `konfuse merge`
-konfuse new-cluster.yaml
-
 # Rename context, cluster, and user on import
 konfuse merge new-cluster.yaml --rename-context prod --rename-cluster eks-prod --rename-user eks-admin
 

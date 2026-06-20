@@ -25,9 +25,6 @@ konfuse merge <file> --dry-run
 # Basic merge (asks for confirmation when overwriting an existing kubeconfig)
 konfuse merge <file>
 
-# Shortcut: a bare file argument also dispatches to merge
-konfuse <file>
-
 # Rename context and cluster on import (recommended)
 konfuse merge <file> --rename-context <name> --rename-cluster <name>
 

@@ -11,7 +11,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `konfuse use <context-name>` — switch the active context (sets `current-context`); supports `--kubeconfig` and `--json`
 - Backup is written only when `use` actually changes the current context (no-op switches leave the file untouched)
 - Confirmation prompt before destructive writes on `merge` (when target exists) and `delete`. Auto-skipped in non-TTY contexts (pipes / CI), with `--json`, or with `--yes`. The `--yes` flag is now wired (previously declared but ignored).
-- Explicit `konfuse merge <file>` subcommand. `konfuse <file>` continues to work as a backward-compat shortcut.
+- Explicit `konfuse merge <file>` subcommand — the only way to merge.
 - `konfuse --version` and `konfuse <command> -h` now work at any position. `konfuse list --version` (etc.) prints the version; previously only `konfuse --version` did.
 - Subcommand `-h` output now lists required positional arguments under an "Arguments:" section and documents `-h, --help` explicitly.
 
@@ -22,9 +22,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `--kubeconfig` help text is now consistent across all subcommands (`Target kubeconfig`); the auto-rendered default path is no longer duplicated in the description.
 
 ### Removed
+- **Breaking:** the bare-file shortcut `konfuse <file>` (an alias for `konfuse merge <file>`) has been removed. Merging now requires the explicit `merge` subcommand. An unrecognized first argument is a usage error (exit 2); when it looks like a path, the error hints at `konfuse merge <file>`.
 - `--yes` is no longer accepted on `konfuse use`. It was a no-op (use never prompted) and offered surface area without behavior. `--yes` remains valid on `merge` and `delete`.
 
 ### Fixed
+- An extra positional argument no longer silently discards a following flag. `konfuse merge a.yaml b.yaml --kubeconfig PATH` previously ignored both `b.yaml` and `--kubeconfig`, then wrote the default `~/.kube/config`. All subcommands now reject unexpected positional arguments with a usage error (exit 2) and the intended `--kubeconfig` is honored.
+- `konfuse <command> -h` / `--help` now exits 0 (like the top-level `konfuse -h`) instead of the usage-error code 2.
+- Invalid flags (e.g. `konfuse use ctx --yes`, `konfuse list --bogus`) now produce konfuse's styled error with a `konfuse <command> -h` hint and respect `--json`, instead of the flag package's raw `flag provided but not defined` text.
 - `konfuse delete <context-name> --kubeconfig PATH` now respects flags placed after the positional argument (previously the flag was silently ignored)
 - `konfuse --json` (with no input file) now emits a JSON-formatted error instead of the plain-text "Error: input file argument is required" — the bare error path bypassed JSON-mode detection.
 - `konfuse list`, `konfuse delete`, `konfuse use` now exit with code 3 (file not found) when the kubeconfig path doesn't exist; previously they surfaced a less specific exit-1 load error.

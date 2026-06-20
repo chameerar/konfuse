@@ -20,82 +20,97 @@ func TestExtractPositional(t *testing.T) {
 	tests := []struct {
 		name         string
 		args         []string
-		wantPos      string
+		wantPos      []string
 		wantFlagArgs []string
 	}{
 		{
 			name:         "positional_only",
 			args:         []string{"file.yaml"},
-			wantPos:      "file.yaml",
+			wantPos:      []string{"file.yaml"},
 			wantFlagArgs: nil,
 		},
 		{
 			name:         "positional_before_flags",
 			args:         []string{"file.yaml", "--dry-run"},
-			wantPos:      "file.yaml",
+			wantPos:      []string{"file.yaml"},
 			wantFlagArgs: []string{"--dry-run"},
 		},
 		{
 			name:         "flags_before_positional",
 			args:         []string{"--dry-run", "file.yaml"},
-			wantPos:      "file.yaml",
+			wantPos:      []string{"file.yaml"},
 			wantFlagArgs: []string{"--dry-run"},
 		},
 		{
 			name:         "value_flag_before_positional",
 			args:         []string{"--rename-context", "prod", "file.yaml"},
-			wantPos:      "file.yaml",
+			wantPos:      []string{"file.yaml"},
 			wantFlagArgs: []string{"--rename-context", "prod"},
 		},
 		{
 			name:         "value_flag_after_positional",
 			args:         []string{"file.yaml", "--rename-context", "prod"},
-			wantPos:      "file.yaml",
+			wantPos:      []string{"file.yaml"},
 			wantFlagArgs: []string{"--rename-context", "prod"},
 		},
 		{
 			name:         "value_flag_equals_syntax",
 			args:         []string{"file.yaml", "--rename-context=prod"},
-			wantPos:      "file.yaml",
+			wantPos:      []string{"file.yaml"},
 			wantFlagArgs: []string{"--rename-context=prod"},
 		},
 		{
 			name:         "all_rename_flags",
 			args:         []string{"file.yaml", "--rename-context", "ctx", "--rename-cluster", "cls", "--rename-user", "usr"},
-			wantPos:      "file.yaml",
+			wantPos:      []string{"file.yaml"},
 			wantFlagArgs: []string{"--rename-context", "ctx", "--rename-cluster", "cls", "--rename-user", "usr"},
 		},
 		{
 			name:         "kubeconfig_flag",
 			args:         []string{"file.yaml", "--kubeconfig", "/path/to/config"},
-			wantPos:      "file.yaml",
+			wantPos:      []string{"file.yaml"},
 			wantFlagArgs: []string{"--kubeconfig", "/path/to/config"},
 		},
 		{
 			name:         "no_args",
 			args:         []string{},
-			wantPos:      "",
+			wantPos:      nil,
 			wantFlagArgs: nil,
 		},
 		{
 			name:         "flags_only_no_positional",
 			args:         []string{"--dry-run", "--json"},
-			wantPos:      "",
+			wantPos:      nil,
 			wantFlagArgs: []string{"--dry-run", "--json"},
 		},
 		{
 			name:         "single_dash_flag",
 			args:         []string{"file.yaml", "-json"},
-			wantPos:      "file.yaml",
+			wantPos:      []string{"file.yaml"},
 			wantFlagArgs: []string{"-json"},
+		},
+		{
+			// Regression: an extra positional must NOT swallow a following
+			// flag value. Both files are returned as positionals (the caller
+			// rejects the extra) and --kubeconfig stays parseable.
+			name:         "extra_positional_keeps_flag",
+			args:         []string{"file.yaml", "extra.yaml", "--kubeconfig", "/path/to/config"},
+			wantPos:      []string{"file.yaml", "extra.yaml"},
+			wantFlagArgs: []string{"--kubeconfig", "/path/to/config"},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			gotPos, gotFlags := extractPositional(tt.args)
-			if gotPos != tt.wantPos {
-				t.Errorf("positional = %q, want %q", gotPos, tt.wantPos)
+			if len(gotPos) != len(tt.wantPos) {
+				t.Errorf("positionals = %v, want %v", gotPos, tt.wantPos)
+				return
+			}
+			for i := range gotPos {
+				if gotPos[i] != tt.wantPos[i] {
+					t.Errorf("positionals[%d] = %q, want %q", i, gotPos[i], tt.wantPos[i])
+				}
 			}
 			if len(gotFlags) != len(tt.wantFlagArgs) {
 				t.Errorf("flagArgs = %v, want %v", gotFlags, tt.wantFlagArgs)
@@ -896,8 +911,8 @@ current-context: ctx1
 			strings.NewReader(""),
 			&stdout, &stderr,
 		)
-		if code != exitUsage {
-			t.Errorf("exit = %d, want %d (help)", code, exitUsage)
+		if code != exitOK {
+			t.Errorf("exit = %d, want %d (help)", code, exitOK)
 		}
 		if !strings.Contains(stderr.String(), "Examples:") {
 			t.Errorf("expected 'Examples:' in help output, got:\n%s", stderr.String())
@@ -1140,8 +1155,8 @@ current-context: ctx1
 			strings.NewReader(""),
 			&stdout, &stderr,
 		)
-		if code != exitUsage {
-			t.Errorf("exit = %d, want %d", code, exitUsage)
+		if code != exitOK {
+			t.Errorf("exit = %d, want %d", code, exitOK)
 		}
 		if !strings.Contains(stderr.String(), "Examples:") {
 			t.Errorf("expected 'Examples:' in help, got:\n%s", stderr.String())
@@ -1292,8 +1307,8 @@ current-context: ctx1
 			strings.NewReader(""),
 			&stdout, &stderr,
 		)
-		if code != exitUsage {
-			t.Errorf("exit = %d, want %d", code, exitUsage)
+		if code != exitOK {
+			t.Errorf("exit = %d, want %d", code, exitOK)
 		}
 		if !strings.Contains(stderr.String(), "Examples:") {
 			t.Errorf("expected 'Examples:' in help, got:\n%s", stderr.String())

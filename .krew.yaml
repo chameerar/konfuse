@@ -1,0 +1,47 @@
+apiVersion: krew.googlecontainertools.github.com/v1alpha2
+kind: Plugin
+metadata:
+  name: konfuse
+spec:
+  version: {{ .TagName }}
+  homepage: https://github.com/chameerar/konfuse
+  shortDescription: Merge and manage kubeconfig files
+  description: |
+    konfuse merges kubeconfig files into your existing config in one command,
+    with rename-on-import and an automatic timestamped backup. It also lists,
+    switches, and cleanly deletes contexts (removing orphaned cluster/user
+    entries), with structured --json output for scripting.
+
+    Usage:
+      kubectl konfuse merge new-cluster.yaml --rename-context prod
+      kubectl konfuse list
+      kubectl konfuse use prod
+      kubectl konfuse delete old-staging
+  caveats: |
+    konfuse writes to ~/.kube/config (or the path given via --kubeconfig) and
+    always creates a timestamped backup before modifying it.
+  platforms:
+    - selector:
+        matchLabels:
+          os: darwin
+          arch: amd64
+      {{addURIAndSha "https://github.com/chameerar/konfuse/releases/download/{{ .TagName }}/konfuse-macos-amd64.tar.gz" .TagName }}
+      bin: konfuse
+    - selector:
+        matchLabels:
+          os: darwin
+          arch: arm64
+      {{addURIAndSha "https://github.com/chameerar/konfuse/releases/download/{{ .TagName }}/konfuse-macos-arm64.tar.gz" .TagName }}
+      bin: konfuse
+    - selector:
+        matchLabels:
+          os: linux
+          arch: amd64
+      {{addURIAndSha "https://github.com/chameerar/konfuse/releases/download/{{ .TagName }}/konfuse-linux-amd64.tar.gz" .TagName }}
+      bin: konfuse
+    - selector:
+        matchLabels:
+          os: linux
+          arch: arm64
+      {{addURIAndSha "https://github.com/chameerar/konfuse/releases/download/{{ .TagName }}/konfuse-linux-arm64.tar.gz" .TagName }}
+      bin: konfuse

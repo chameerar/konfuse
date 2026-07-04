@@ -39,11 +39,19 @@ jobs:
             go build -ldflags="-s -w -X main.version=${GITHUB_REF_NAME}" \
             -o dist/konfuse-${{ matrix.target }} .
 
+      - name: Package tarball for Krew
+        run: |
+          cd dist
+          cp konfuse-${{ matrix.target }} konfuse
+          cp ../LICENSE .
+          tar -czf konfuse-${{ matrix.target }}.tar.gz konfuse LICENSE
+          rm konfuse LICENSE
+
       - name: Upload binary artifact
         uses: actions/upload-artifact@v4
         with:
           name: konfuse-${{ matrix.target }}
-          path: dist/konfuse-${{ matrix.target }}
+          path: dist/konfuse-${{ matrix.target }}*
 
   # ── Create GitHub Release with all binaries ────────────────────────────────
   release:
@@ -86,4 +94,8 @@ jobs:
             dist/konfuse-linux-arm64
             dist/konfuse-macos-amd64
             dist/konfuse-macos-arm64
+            dist/konfuse-linux-amd64.tar.gz
+            dist/konfuse-linux-arm64.tar.gz
+            dist/konfuse-macos-amd64.tar.gz
+            dist/konfuse-macos-arm64.tar.gz
             dist/checksums.txt

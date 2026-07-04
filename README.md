@@ -10,7 +10,6 @@ Kubeconfigs are confusing enough. `konfuse` makes merging them less so.
 
 Got a new cluster config from your ops team? Spinning up another EKS environment? `konfuse` merges it into your existing `~/.kube/config` in one command — with a friendly name, and a backup in case anything goes wrong.
 
-<!-- Demo GIF: run `vhs demo.tape` to generate docs/demo.gif, then uncomment the line below. -->
 ![konfuse in action](docs/demo.gif)
 
 ## Why konfuse?

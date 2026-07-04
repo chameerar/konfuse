@@ -5,6 +5,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.4.1] - 2026-07-04
+
+### Added
+- Krew distribution — install with `kubectl krew install konfuse` (pending acceptance into the [krew-index](https://github.com/kubernetes-sigs/krew-index)). Releases now publish per-platform `.tar.gz` archives (`konfuse-<os>-<arch>.tar.gz`, each containing the binary and `LICENSE`) alongside the existing raw binaries.
+
+---
+
 ## [0.4.0] - 2026-06-29
 
 ### Removed

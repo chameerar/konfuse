@@ -1,0 +1,17 @@
+name: Krew
+
+# After a release is published, generate the Krew manifest from .krew.yaml
+# and open (or update) a PR against kubernetes-sigs/krew-index.
+on:
+  release:
+    types: [released]
+
+jobs:
+  krew:
+    name: Update krew-index
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Update new version in krew-index
+        uses: rajatjindal/krew-release-bot@v0.0.46

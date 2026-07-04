@@ -4,10 +4,14 @@
 
 [![CI](https://github.com/chameerar/konfuse/actions/workflows/ci.yml/badge.svg)](https://github.com/chameerar/konfuse/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/chameerar/konfuse)](https://github.com/chameerar/konfuse/releases/latest)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 Kubeconfigs are confusing enough. `konfuse` makes merging them less so.
 
 Got a new cluster config from your ops team? Spinning up another EKS environment? `konfuse` merges it into your existing `~/.kube/config` in one command — with a friendly name, and a backup in case anything goes wrong.
+
+<!-- Demo GIF: run `vhs demo.tape` to generate docs/demo.gif, then uncomment the line below. -->
+![konfuse in action](docs/demo.gif)
 
 ## Why konfuse?
 
@@ -54,12 +58,20 @@ Make sure `~/.local/bin` is on your PATH (add to `~/.zshrc` or `~/.bashrc` if ne
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
-### Build from source
+### Install with Go
 
 Requires Go 1.22 or newer.
 
 ```bash
 go install github.com/chameerar/konfuse@latest
+```
+
+### Build from source
+
+```bash
+git clone https://github.com/chameerar/konfuse.git
+cd konfuse
+go build -o konfuse .
 ```
 
 ### Uninstall

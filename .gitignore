@@ -4,6 +4,7 @@ konfuse
 
 # Go
 *.test
+.coverage
 
 # Claude Code
 .claude/

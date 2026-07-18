@@ -103,9 +103,9 @@ func fail(errw io.Writer, useJSON bool, message, hint string, code int) int {
 		_ = enc.Encode(errorOutput{Error: message, Hint: hint})
 		fmt.Fprint(errw, buf.String())
 	} else {
-		fmt.Fprintf(errw, "Error: %s\n", message)
+		fmt.Fprintf(errw, "error: %s\n", message)
 		if hint != "" {
-			fmt.Fprintf(errw, "Try:   %s\n", hint)
+			fmt.Fprintf(errw, "  try: %s\n", hint)
 		}
 	}
 	return code
@@ -572,17 +572,25 @@ func runDeleteE(args []string, defaultKubeconfig string, stdin io.Reader, stdout
 			Deleted: result,
 		})
 	} else {
+		fmt.Fprintf(stdout, "Deleted context %q\n", result.Context)
+
+		if result.Cluster != "" || result.User != "" {
+			fmt.Fprintf(stdout, "  - also removed")
+			if result.Cluster != "" {
+				fmt.Fprintf(stdout, " cluster %q", result.Cluster)
+			}
+			if result.User != "" {
+				if result.Cluster != "" {
+					fmt.Fprint(stdout, ",")
+				}
+				fmt.Fprintf(stdout, " user %q", result.User)
+			}
+			fmt.Fprintln(stdout)
+		}
+
 		if backupPath != nil {
-			fmt.Fprintf(stdout, "backup: %s\n\n", *backupPath)
+			fmt.Fprintf(stdout, "backup: %s\n", filepath.Base(*backupPath))
 		}
-		fmt.Fprintf(stdout, "  - Deleted context: %s\n", result.Context)
-		if result.Cluster != "" {
-			fmt.Fprintf(stdout, "  - Deleted cluster: %s\n", result.Cluster)
-		}
-		if result.User != "" {
-			fmt.Fprintf(stdout, "  - Deleted user: %s\n", result.User)
-		}
-		fmt.Fprintf(stdout, "\nsaved: %s\n", *kubeconfig)
 	}
 	return exitOK
 }
@@ -653,18 +661,19 @@ func runUseE(args []string, defaultKubeconfig string, stdin io.Reader, stdout, s
 		})
 	} else {
 		if !result.Changed {
-			fmt.Fprintf(stdout, "already on context: %s\n", result.Context)
+			fmt.Fprintf(stdout, "Already on context %q.\n", result.Context)
 			return exitOK
 		}
-		if backupPath != nil {
-			fmt.Fprintf(stdout, "backup: %s\n\n", *backupPath)
-		}
+
 		if result.Previous != "" {
-			fmt.Fprintf(stdout, "switched context: %s -> %s\n", result.Previous, result.Context)
+			fmt.Fprintf(stdout, "Switched to context %q (was %q).\n", result.Context, result.Previous)
 		} else {
-			fmt.Fprintf(stdout, "switched context: %s\n", result.Context)
+			fmt.Fprintf(stdout, "Switched to context %q.\n", result.Context)
 		}
-		fmt.Fprintf(stdout, "\nsaved: %s\n", *kubeconfig)
+
+		if backupPath != nil {
+			fmt.Fprintf(stdout, "backup: %s\n", filepath.Base(*backupPath))
+		}
 	}
 	_ = stdin
 	return exitOK
@@ -742,7 +751,7 @@ func printChanges(out io.Writer, result merger.MergeResult, dryRun bool) {
 			fmt.Fprintf(out, "  + %s %s: %s\n", addVerb, s.label, name)
 		}
 		for _, name := range s.result.Replaced {
-			fmt.Fprintf(out, "  ! %s %s: %s\n", replaceVerb, s.label, name)
+			fmt.Fprintf(out, "  ~ %s %s: %s\n", replaceVerb, s.label, name)
 		}
 	}
 }

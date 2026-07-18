@@ -373,10 +373,10 @@ func TestPrintChanges(t *testing.T) {
 		}
 	})
 
-	t.Run("replaced_entries_use_bang_prefix", func(t *testing.T) {
+	t.Run("replaced_entries_use_tilde_prefix", func(t *testing.T) {
 		out := render(false)
-		if !strings.Contains(out, "  ! ") {
-			t.Errorf("expected '  ! ' prefix for replaced entries, got:\n%s", out)
+		if !strings.Contains(out, "  ~ ") {
+			t.Errorf("expected '  ~ ' prefix for replaced entries, got:\n%s", out)
 		}
 	})
 

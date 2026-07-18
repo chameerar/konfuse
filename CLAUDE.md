@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-`konfuse` is a Go CLI for kubeconfig management: merging files (with rename-on-import and auto-backup), listing entries, switching the active context, and deleting contexts cleanly. Single binary, no runtime dependencies. Requires Go 1.22+ to build.
+`konfuse` is a Go CLI for kubeconfig management: merging files (with rename-on-import and auto-backup), listing entries, switching the active context, and deleting contexts cleanly. Single binary, no runtime dependencies. Requires Go 1.26+ to build.
 
 ## Development Setup
 

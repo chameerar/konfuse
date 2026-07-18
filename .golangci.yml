@@ -1,20 +1,30 @@
+version: "2"
 linters:
-  enable:
-    - errcheck      # unchecked errors
-    - gosimple      # simplification suggestions
-    - govet         # go vet checks
-    - ineffassign   # unused assignments
-    - staticcheck   # static analysis
-    - unused        # unused code
-
-linters-settings:
-  errcheck:
-    # Allow ignoring errors on Close() calls via defer
-    exclude-functions:
-      - (*os.File).Close
-
-issues:
-  exclude-rules:
-    # nolint comments in main.go are intentional (flag.CommandLine.Parse)
-    - text: "should not use dot imports"
-      linters: [golint]
+  settings:
+    errcheck:
+      # Allow ignoring errors on Close() calls via defer
+      exclude-functions:
+        - (*os.File).Close
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      # nolint comments in main.go are intentional (flag.CommandLine.Parse)
+      - linters:
+          - golint
+        text: should not use dot imports
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
+formatters:
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$

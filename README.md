@@ -59,7 +59,7 @@ export PATH="$HOME/.local/bin:$PATH"
 
 ### Install with Go
 
-Requires Go 1.22 or newer.
+Requires Go 1.26 or newer.
 
 ```bash
 go install github.com/chameerar/konfuse@latest
@@ -217,6 +217,36 @@ Conflicts (same name already exists) are handled non-fatally: the incoming entry
 ```bash
 cp ~/.kube/config.backup.20260328T120000 ~/.kube/config
 ```
+
+## Contributing
+
+Contributions are welcome. konfuse is a single Go binary with no runtime dependencies (Go 1.26+ to build).
+
+**Project layout:**
+
+- `main.go` — CLI entry point: flag parsing, I/O, backups, output formatting
+- `internal/merger/` — pure merge/list/use/delete logic (no I/O, fully unit-tested)
+
+**Develop:**
+
+```bash
+git clone https://github.com/chameerar/konfuse.git
+cd konfuse
+go mod tidy
+
+go build -o konfuse .        # build
+go test ./...                # run tests
+go vet ./...                 # vet
+```
+
+**Before opening a PR:**
+
+- Run `go test ./...` and `go vet ./...` — both must pass (CI runs them on every push).
+- Add or update tests for behavior changes. Keep merge logic in `internal/merger` (I/O-free and testable); keep I/O and formatting in `main.go`.
+- Keep the `--json` output stable — it's a scripting/CI contract.
+- Note user-facing changes in `CHANGELOG.md` under an "Unreleased" heading.
+
+Have an idea or found a bug? [Open an issue](https://github.com/chameerar/konfuse/issues) to discuss before large changes.
 
 ## License
 

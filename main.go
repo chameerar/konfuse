@@ -413,15 +413,24 @@ func runMergeE(args []string, defaultKubeconfig string, stdin io.Reader, stdout,
 			HasConflicts: hasConflicts,
 		})
 	} else {
-		if backupPath != nil {
-			fmt.Fprintf(stdout, "backup: %s\n", *backupPath)
-		}
 		fmt.Fprintln(stdout)
 		printChanges(stdout, result, false)
-		if hasConflicts {
-			fmt.Fprintln(stdout, "\nwarning: some entries were replaced. Use --rename-* flags to keep both versions.")
+
+		if backupPath != nil {
+			fmt.Fprintf(stdout, "\nbackup: %s\n", filepath.Base(*backupPath))
 		}
-		fmt.Fprintf(stdout, "\nsaved: %s\n", *kubeconfig)
+
+		replaced := len(result.Clusters.Replaced) +
+			len(result.Users.Replaced) +
+			len(result.Contexts.Replaced)
+
+		if hasConflicts {
+			fmt.Fprintf(
+				stdout,
+				"\nwarning: %d replaced — pass --rename-* to keep both versions.\n",
+				replaced,
+			)
+		}
 	}
 
 	return exitOK

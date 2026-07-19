@@ -1219,6 +1219,31 @@ current-context: ctx1
 		}
 	})
 
+	t.Run("human_output_switch_message", func(t *testing.T) {
+		path := writeTempFile(t, yamlBody)
+
+		var stdout, stderr bytes.Buffer
+
+		oldTTY := isTTYStdoutFn
+		isTTYStdoutFn = func() bool { return true }
+		defer func() { isTTYStdoutFn = oldTTY }()
+
+		code := runUseE(
+			[]string{"ctx2", "--kubeconfig", path},
+			"",
+			strings.NewReader(""),
+			&stdout, &stderr,
+		)
+
+		if code != exitOK {
+			t.Fatalf("exit = %d", code)
+		}
+
+		if !strings.Contains(stdout.String(), "Switched to context \"ctx2\" (was \"ctx1\").") {
+			t.Fatalf("unexpected output:\n%s", stdout.String())
+		}
+	})
+
 	t.Run("noop_when_already_on_context_no_backup", func(t *testing.T) {
 		path := writeTempFile(t, yamlBody)
 		var stdout, stderr bytes.Buffer

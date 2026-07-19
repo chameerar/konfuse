@@ -990,6 +990,34 @@ current-context: ctx1
 		}
 	})
 
+	t.Run("human_stdout", func(t *testing.T) {
+		path := writeTempFile(t, yamlBody)
+
+		oldTTY := isTTYStdoutFn
+		isTTYStdoutFn = func() bool { return true }
+		defer func() { isTTYStdoutFn = oldTTY }()
+
+		var stdout, stderr bytes.Buffer
+		code := runDeleteE(
+			[]string{"ctx2", "--kubeconfig", path, "--yes"},
+			"",
+			strings.NewReader(""),
+			&stdout, &stderr,
+		)
+		if code != exitOK {
+			t.Fatalf("exit = %d, stderr: %s", code, stderr.String())
+		}
+
+		out := stdout.String()
+		if !strings.Contains(out, `Deleted context "ctx2"`) {
+			t.Fatalf("stdout = %q", out)
+		}
+
+		if !strings.Contains(out, `also removed cluster "c2", user "u2"`) {
+			t.Fatalf("stdout = %q", out)
+		}
+	})
+
 	t.Run("returns_exitError_when_context_not_found", func(t *testing.T) {
 		path := writeTempFile(t, yamlBody)
 		var stdout, stderr bytes.Buffer

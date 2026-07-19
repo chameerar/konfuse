@@ -14,7 +14,7 @@ _Nothing yet._
 ## [0.4.1] - 2026-07-04
 
 ### Added
-- Krew distribution — install with `kubectl krew install konfuse` (pending acceptance into the [krew-index](https://github.com/kubernetes-sigs/krew-index)). Releases now publish per-platform `.tar.gz` archives (`konfuse-<os>-<arch>.tar.gz`, each containing the binary and `LICENSE`) alongside the existing raw binaries.
+- Krew distribution — install with `kubectl krew install konfuse` (now available in the [krew-index](https://github.com/kubernetes-sigs/krew-index)). Releases now publish per-platform `.tar.gz` archives (`konfuse-<os>-<arch>.tar.gz`, each containing the binary and `LICENSE`) alongside the existing raw binaries.
 
 ---
 

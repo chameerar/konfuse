@@ -29,7 +29,23 @@ Got a new cluster config from your ops team? Spinning up another EKS environment
 
 ## Installation
 
-### Download binary (recommended)
+### Krew (recommended)
+
+If you have [Krew](https://krew.sigs.k8s.io/) (the `kubectl` plugin manager) installed:
+
+```bash
+kubectl krew install konfuse
+```
+
+konfuse then runs as a `kubectl` plugin:
+
+```bash
+kubectl konfuse merge new-cluster.yaml --rename-context prod
+```
+
+> The examples below use the standalone `konfuse` binary. If you installed via Krew, prefix commands with `kubectl` (e.g. `kubectl konfuse list`).
+
+### Download binary
 
 ```bash
 mkdir -p ~/.local/bin

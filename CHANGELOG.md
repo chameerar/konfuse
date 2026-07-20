@@ -7,7 +7,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-_Nothing yet._
+### Changed
+
+- Simplified human-readable terminal output across `merge`, `use`, and `delete` commands while keeping the JSON output unchanged.
 
 ---
 

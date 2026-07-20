@@ -373,10 +373,10 @@ func TestPrintChanges(t *testing.T) {
 		}
 	})
 
-	t.Run("replaced_entries_use_bang_prefix", func(t *testing.T) {
+	t.Run("replaced_entries_use_tilde_prefix", func(t *testing.T) {
 		out := render(false)
-		if !strings.Contains(out, "  ! ") {
-			t.Errorf("expected '  ! ' prefix for replaced entries, got:\n%s", out)
+		if !strings.Contains(out, "  ~ ") {
+			t.Errorf("expected '  ~ ' prefix for replaced entries, got:\n%s", out)
 		}
 	})
 
@@ -990,6 +990,34 @@ current-context: ctx1
 		}
 	})
 
+	t.Run("human_stdout", func(t *testing.T) {
+		path := writeTempFile(t, yamlBody)
+
+		oldTTY := isTTYStdoutFn
+		isTTYStdoutFn = func() bool { return true }
+		defer func() { isTTYStdoutFn = oldTTY }()
+
+		var stdout, stderr bytes.Buffer
+		code := runDeleteE(
+			[]string{"ctx2", "--kubeconfig", path, "--yes"},
+			"",
+			strings.NewReader(""),
+			&stdout, &stderr,
+		)
+		if code != exitOK {
+			t.Fatalf("exit = %d, stderr: %s", code, stderr.String())
+		}
+
+		out := stdout.String()
+		if !strings.Contains(out, `Deleted context "ctx2"`) {
+			t.Fatalf("stdout = %q", out)
+		}
+
+		if !strings.Contains(out, `also removed cluster "c2", user "u2"`) {
+			t.Fatalf("stdout = %q", out)
+		}
+	})
+
 	t.Run("returns_exitError_when_context_not_found", func(t *testing.T) {
 		path := writeTempFile(t, yamlBody)
 		var stdout, stderr bytes.Buffer
@@ -1219,6 +1247,31 @@ current-context: ctx1
 		}
 	})
 
+	t.Run("human_output_switch_message", func(t *testing.T) {
+		path := writeTempFile(t, yamlBody)
+
+		var stdout, stderr bytes.Buffer
+
+		oldTTY := isTTYStdoutFn
+		isTTYStdoutFn = func() bool { return true }
+		defer func() { isTTYStdoutFn = oldTTY }()
+
+		code := runUseE(
+			[]string{"ctx2", "--kubeconfig", path},
+			"",
+			strings.NewReader(""),
+			&stdout, &stderr,
+		)
+
+		if code != exitOK {
+			t.Fatalf("exit = %d", code)
+		}
+
+		if !strings.Contains(stdout.String(), "Switched to context \"ctx2\" (was \"ctx1\").") {
+			t.Fatalf("unexpected output:\n%s", stdout.String())
+		}
+	})
+
 	t.Run("noop_when_already_on_context_no_backup", func(t *testing.T) {
 		path := writeTempFile(t, yamlBody)
 		var stdout, stderr bytes.Buffer
@@ -1240,6 +1293,30 @@ current-context: ctx1
 		}
 		if got.Backup != nil {
 			t.Errorf("expected nil backup for no-op, got %v", *got.Backup)
+		}
+	})
+
+	t.Run("noop_human_output", func(t *testing.T) {
+		path := writeTempFile(t, yamlBody)
+
+		oldTTY := isTTYStdoutFn
+		isTTYStdoutFn = func() bool { return true }
+		defer func() { isTTYStdoutFn = oldTTY }()
+
+		var stdout, stderr bytes.Buffer
+		code := runUseE(
+			[]string{"ctx1", "--kubeconfig", path},
+			"",
+			strings.NewReader(""),
+			&stdout, &stderr,
+		)
+
+		if code != exitOK {
+			t.Fatalf("exit = %d, stderr: %s", code, stderr.String())
+		}
+
+		if !strings.Contains(stdout.String(), `Already on context "ctx1".`) {
+			t.Fatalf("unexpected output:\n%s", stdout.String())
 		}
 	})
 

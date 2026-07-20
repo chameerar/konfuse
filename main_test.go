@@ -1296,6 +1296,30 @@ current-context: ctx1
 		}
 	})
 
+	t.Run("noop_human_output", func(t *testing.T) {
+		path := writeTempFile(t, yamlBody)
+
+		oldTTY := isTTYStdoutFn
+		isTTYStdoutFn = func() bool { return true }
+		defer func() { isTTYStdoutFn = oldTTY }()
+
+		var stdout, stderr bytes.Buffer
+		code := runUseE(
+			[]string{"ctx1", "--kubeconfig", path},
+			"",
+			strings.NewReader(""),
+			&stdout, &stderr,
+		)
+
+		if code != exitOK {
+			t.Fatalf("exit = %d, stderr: %s", code, stderr.String())
+		}
+
+		if !strings.Contains(stdout.String(), `Already on context "ctx1".`) {
+			t.Fatalf("unexpected output:\n%s", stdout.String())
+		}
+	})
+
 	t.Run("yes_flag_rejected", func(t *testing.T) {
 		// --yes was removed from use; it's now an unknown flag.
 		path := writeTempFile(t, yamlBody)
